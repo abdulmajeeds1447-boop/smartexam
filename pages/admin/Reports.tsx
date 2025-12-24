@@ -33,7 +33,8 @@ export const Reports: React.FC = () => {
   // 2. Committee Operations Data
   const committeesData = exams
     .filter(e => e.date === selectedDate)
-    .sort((a, b) => a.committeeNumber.localeCompare(b.committeeNumber));
+    // Fix: Use numeric sort so "2" comes before "10"
+    .sort((a, b) => a.committeeNumber.localeCompare(b.committeeNumber, 'en', { numeric: true }));
 
   // 3. Notifications Data
   // No date filter for notifications history typically, or maybe last 20

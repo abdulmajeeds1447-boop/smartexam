@@ -1,6 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import { UploadCloud, Search, User, Trash2, Download, GraduationCap, X } from 'lucide-react';
+import { UploadCloud, Search, User, Trash2, Download, GraduationCap, X, Phone } from 'lucide-react';
 import { Student } from '../../types';
 import * as XLSX from 'xlsx';
 
@@ -33,6 +33,7 @@ export const StudentManagement: React.FC = () => {
       const idxId = getIndex(['رقم الجلوس', 'رقم الهوية', 'الرقم']);
       const idxGrade = getIndex(['الصف', 'المرحلة']);
       const idxClass = getIndex(['الفصل', 'الشعبة']);
+      const idxPhone = getIndex(['جوال ولي الأمر', 'رقم ولي الأمر', 'الهاتف', 'الجوال']);
 
       if (idxName === -1) {
           alert("خطأ: لا يوجد عمود باسم الطالب في الملف");
@@ -48,6 +49,7 @@ export const StudentManagement: React.FC = () => {
           const id = idxId > -1 ? String(row[idxId]).trim() : `S-${Date.now()}-${index}`;
           const grade = idxGrade > -1 ? String(row[idxGrade]).trim() : 'عام';
           const className = idxClass > -1 ? String(row[idxClass]).trim() : '';
+          const phone = idxPhone > -1 ? String(row[idxPhone]).trim() : '';
           
           newStudents.push({
               id: id,
@@ -57,7 +59,8 @@ export const StudentManagement: React.FC = () => {
               className: className,
               stage: 'الثانوية', // Default
               subject: 'عام',
-              image: `https://ui-avatars.com/api/?name=${name}&background=random`
+              image: `https://ui-avatars.com/api/?name=${name}&background=random`,
+              parentPhone: phone
           });
       });
 
@@ -74,9 +77,9 @@ export const StudentManagement: React.FC = () => {
 
   const downloadTemplate = () => {
     const ws = XLSX.utils.aoa_to_sheet([
-      ["اسم الطالب", "رقم الجلوس", "الصف", "الفصل"],
-      ["أحمد محمد", "2024001", "أول ثانوي", "1/1"],
-      ["سعيد علي", "2024002", "ثاني ثانوي", "2/3"]
+      ["اسم الطالب", "رقم الجلوس", "الصف", "الفصل", "جوال ولي الأمر"],
+      ["أحمد محمد", "2024001", "أول ثانوي", "1/1", "0555555555"],
+      ["سعيد علي", "2024002", "ثاني ثانوي", "2/3", "0500000000"]
     ]);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "الطلاب");
@@ -167,6 +170,7 @@ export const StudentManagement: React.FC = () => {
                             <th className="p-4 font-medium">رقم الجلوس</th>
                             <th className="p-4 font-medium">الصف</th>
                             <th className="p-4 font-medium">الفصل</th>
+                            <th className="p-4 font-medium">ولي الأمر</th>
                             <th className="p-4 font-medium">إجراءات</th>
                         </tr>
                     </thead>
@@ -184,6 +188,14 @@ export const StudentManagement: React.FC = () => {
                                 <td className="p-4 font-mono text-gray-600">{student.seatNumber}</td>
                                 <td className="p-4 text-gray-600">{student.grade}</td>
                                 <td className="p-4 text-gray-600">{student.className}</td>
+                                <td className="p-4 text-gray-600">
+                                    {student.parentPhone ? (
+                                        <div className="flex items-center gap-1 font-mono text-xs bg-gray-50 px-2 py-1 rounded w-fit">
+                                            <Phone size={12} />
+                                            {student.parentPhone}
+                                        </div>
+                                    ) : '-'}
+                                </td>
                                 <td className="p-4">
                                     <button 
                                         onClick={() => {

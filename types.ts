@@ -1,7 +1,9 @@
 export enum Role {
-  ADMIN = 'ADMIN',
-  TEACHER = 'TEACHER',
-  STUDENT = 'STUDENT'
+  MANAGER = 'MANAGER',      // مدير المدرسة (عرض ومتابعة)
+  CONTROL = 'CONTROL',      // الكنترول (إدارة الاختبارات والمظاريف)
+  COUNSELOR = 'COUNSELOR',  // المرشد الطلابي (متابعة الغياب)
+  TEACHER = 'TEACHER',      // المعلم (المراقب)
+  ADMIN = 'ADMIN'           // (Legacy/Super Admin)
 }
 
 export enum EnvelopeStatus {
@@ -26,6 +28,7 @@ export interface Student {
   className: string;   // e.g. "1/2"
   seatNumber: string;  // e.g. "1001"
   subject: string;     // Subject specific to this student
+  parentPhone?: string; // NEW: Contact number
 }
 
 export interface AttendanceRecord {
@@ -64,4 +67,5 @@ export interface Notification {
   type: 'info' | 'warning' | 'success';
   timestamp: number;
   read: boolean;
+  relatedStudentId?: string; // NEW: Link to student for Counselor
 }

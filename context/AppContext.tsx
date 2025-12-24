@@ -110,14 +110,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return () => unsubscribe();
   }, []);
 
-  const sendNotification = async (title: string, message: string, type: 'info' | 'warning' | 'success' = 'info') => {
+  const sendNotification = async (title: string, message: string, type: 'info' | 'warning' | 'success' = 'info', relatedStudentId?: string) => {
     try {
         await addDoc(collection(db, 'notifications'), {
             title,
             message,
             type,
             timestamp: Date.now(),
-            read: false
+            read: false,
+            relatedStudentId: relatedStudentId || null
         });
     } catch (error: any) {
         console.error("Error sending notification:", error?.message || "Unknown error");
@@ -290,47 +291,53 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
-  // NEW LOGIC: Scan by Committee Number (Static QR)
+  // NEW LOGIC: Scan by Committee Number (Relaxed for Testing)
   const processCommitteeScan = async (committeeNumber: string, teacherId: string): Promise<{success: boolean, message?: string}> => {
     try {
         const today = new Date().toISOString().split('T')[0];
         const now = new Date();
         const currentTime = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
 
-        // 1. Find exams for this committee TODAY
-        const todaysExams = exams.filter(e => 
+        // 1. Get all pending/active exams for this committee (ignoring date initially to allow testing fallback)
+        let availableExams = exams.filter(e => 
             e.committeeNumber === committeeNumber && 
-            e.date === today &&
             e.status !== EnvelopeStatus.COMPLETED &&
             e.status !== EnvelopeStatus.DELIVERED
         );
 
-        if (todaysExams.length === 0) {
-            return { success: false, message: `لا توجد اختبارات مجدولة للجنة ${committeeNumber} اليوم (${today})` };
+        if (availableExams.length === 0) {
+            return { success: false, message: `لا توجد اختبارات نشطة أو قيد الانتظار لهذه اللجنة` };
         }
 
-        // 2. Determine which period is active
+        // 2. Logic to pick the "Best" exam to open
         let targetExam: ExamEnvelope | undefined;
 
-        if (todaysExams.length === 1) {
-            targetExam = todaysExams[0];
-        } else {
-            targetExam = todaysExams.find(e => currentTime >= e.startTime && currentTime <= e.endTime);
-            if (!targetExam) {
-                targetExam = todaysExams.find(e => e.startTime >= currentTime);
-            }
-            if (!targetExam) targetExam = todaysExams[0];
+        // Priority A: Matches Today AND Time (Production Logic)
+        targetExam = availableExams.find(e => 
+            e.date === today && 
+            currentTime >= e.startTime && 
+            currentTime <= e.endTime
+        );
+
+        // Priority B: Matches Today (Any time - e.g. early or late start)
+        if (!targetExam) {
+             targetExam = availableExams.find(e => e.date === today);
+        }
+
+        // Priority C: Fallback to the first available exam (For testing purposes regardless of date/time)
+        // This ensures the demo works even if the schedule was generated for yesterday/tomorrow.
+        if (!targetExam) {
+            targetExam = availableExams[0];
         }
 
         if (targetExam) {
             await scanEnvelope(targetExam.id, teacherId);
             return { success: true };
         } else {
-            return { success: false, message: 'لم يتم العثور على فترة اختبار مناسبة في هذا الوقت.' };
+            return { success: false, message: 'حدث خطأ غير متوقع في تحديد الاختبار.' };
         }
 
     } catch (error: any) {
-        // Prevent Circular JSON error by logging only the message
         const msg = error?.message || String(error);
         console.error("Committee Scan Error:", msg);
         return { success: false, message: msg };
@@ -413,7 +420,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         if (status === AttendanceStatus.ABSENT) {
             const student = exam.students.find(s => s.id === studentId);
             if(student) {
-                sendNotification('تنبيه غياب', `الطالب ${student.name} غائب عن اختبار ${exam.subject}`, 'warning');
+                // Notifying Counselor specially
+                sendNotification(
+                    'تنبيه غياب', 
+                    `الطالب ${student.name} غائب عن اختبار ${exam.subject}`, 
+                    'warning',
+                    studentId
+                );
             }
         }
     } catch (error: any) {

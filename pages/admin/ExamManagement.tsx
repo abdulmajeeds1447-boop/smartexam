@@ -1,7 +1,7 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { QRCodeCanvas } from 'qrcode.react';
-import { Printer, X, CheckCircle, UploadCloud, MapPin, Calendar, Download, Settings, Play, Info, Trash2, ScanLine, AlertTriangle } from 'lucide-react';
+import { Printer, X, CheckCircle, UploadCloud, MapPin, Calendar, Download, Settings, Play, Info, Trash2, ScanLine, AlertTriangle, Edit2 } from 'lucide-react';
 import { EnvelopeStatus, ExamEnvelope, Student, AttendanceStatus } from '../../types';
 import * as XLSX from 'xlsx';
 import { Html5Qrcode } from 'html5-qrcode';
@@ -14,11 +14,10 @@ interface CommitteeData {
     students: Student[];
 }
 
-// --- CONFIGURATION BASED ON IMAGE PROVIDED ---
-const FIXED_SCHEDULE = [
+// --- DEFAULT TEMPLATE (Can be edited in UI) ---
+const DEFAULT_SCHEDULE_TEMPLATE = [
   // Sunday 15/7
   {
-    dayOffset: 0,
     periodLabel: 'الفترة الأولى',
     startTime: '07:30',
     endTime: '10:00', // 2.5 Hours roughly
@@ -29,7 +28,6 @@ const FIXED_SCHEDULE = [
     }
   },
   {
-    dayOffset: 0,
     periodLabel: 'الفترة الثانية',
     startTime: '10:30',
     endTime: '12:30',
@@ -39,7 +37,6 @@ const FIXED_SCHEDULE = [
   },
   // Monday 16/7
   {
-    dayOffset: 1,
     periodLabel: 'الفترة الأولى',
     startTime: '07:30',
     endTime: '10:00',
@@ -51,7 +48,6 @@ const FIXED_SCHEDULE = [
   },
   // Tuesday 17/7
   {
-    dayOffset: 2,
     periodLabel: 'الفترة الأولى',
     startTime: '07:30',
     endTime: '09:30',
@@ -63,7 +59,6 @@ const FIXED_SCHEDULE = [
   },
   // Wednesday 18/7
   {
-    dayOffset: 3,
     periodLabel: 'الفترة الأولى',
     startTime: '07:30',
     endTime: '10:00',
@@ -75,7 +70,6 @@ const FIXED_SCHEDULE = [
   },
   // Thursday 19/7
   {
-    dayOffset: 4,
     periodLabel: 'الفترة الأولى',
     startTime: '07:30',
     endTime: '09:30',
@@ -105,12 +99,16 @@ export const ExamManagement: React.FC = () => {
   
   // Wizard State
   const [showWizard, setShowWizard] = useState(false);
-  const [showScanner, setShowScanner] = useState(false); // NEW STATE FOR SCANNER MODAL
+  const [showScanner, setShowScanner] = useState(false);
   const [scanResult, setScanResult] = useState<{success: boolean, msg: string} | null>(null);
   const [lastScannedId, setLastScannedId] = useState<string | null>(null);
   
   const [importedCommittees, setImportedCommittees] = useState<CommitteeData[]>([]);
   const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
+  
+  // NEW: Editable Schedule State
+  const [scheduleConfig, setScheduleConfig] = useState<any[]>([]);
+
   const [showDeleteAllModal, setShowDeleteAllModal] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -176,6 +174,38 @@ export const ExamManagement: React.FC = () => {
     };
   }, [showScanner]);
 
+  // Update Schedule Config when StartDate Changes or Wizard Opens
+  useEffect(() => {
+    if (showWizard) {
+        const start = new Date(startDate);
+        let currentDayIndex = 0;
+        let lastDayOffset = 0;
+
+        const newConfig = DEFAULT_SCHEDULE_TEMPLATE.map((item, index) => {
+            // Logic to increment day only when period resets or manual logic
+            // Simple logic: If it's "Period 1", increment day (except first one)
+            // But here we rely on the original array order.
+            
+            // To make it simple: We map the template to days.
+            // Assumption: The template provided in the image had consecutive days.
+            // If we encounter "Period 1" and it's not the first item, we assume it's a new day.
+            
+            if (item.periodLabel.includes('الأولى') && index > 0) {
+                currentDayIndex++;
+            }
+
+            const d = new Date(start);
+            d.setDate(start.getDate() + currentDayIndex);
+            
+            return {
+                ...item,
+                date: d.toISOString().split('T')[0]
+            };
+        });
+        setScheduleConfig(newConfig);
+    }
+  }, [showWizard, startDate]);
+
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -210,6 +240,7 @@ export const ExamManagement: React.FC = () => {
       const idxSeat = getIndex(['رقم الجلوس', 'الجلوس']);
       const idxStage = getIndex(['المرحلة']);
       const idxClass = getIndex(['الفصل', 'الشعبة']);
+      const idxPhone = getIndex(['جوال', 'الهاتف', 'رقم ولي الأمر', 'موبايل']);
 
       const tempMap = new Map<string, CommitteeData>();
 
@@ -237,6 +268,7 @@ export const ExamManagement: React.FC = () => {
         if (gradeRaw && !comm.grades.includes(gradeRaw)) comm.grades.push(gradeRaw);
 
         const seat = idxSeat > -1 ? String(row[idxSeat] || '') : `S-${cNo}-${rowIndex}`;
+        const phone = idxPhone > -1 ? String(row[idxPhone] || '').trim() : '';
         
         comm.students.push({
             id: seat,
@@ -246,7 +278,8 @@ export const ExamManagement: React.FC = () => {
             grade: gradeRaw, // Keep original e.g. "أول ثانوي"
             className: idxClass > -1 ? String(row[idxClass] || '') : '',
             seatNumber: seat,
-            subject: 'عام'
+            subject: 'عام',
+            parentPhone: phone // Store Phone Number
         });
       });
 
@@ -257,13 +290,16 @@ export const ExamManagement: React.FC = () => {
     reader.readAsArrayBuffer(file);
   };
 
+  const updateScheduleItem = (index: number, field: string, value: string) => {
+      const updated = [...scheduleConfig];
+      updated[index] = { ...updated[index], [field]: value };
+      setScheduleConfig(updated);
+  };
+
   const handleGenerate = () => {
       const newExams: ExamEnvelope[] = [];
-      const startDateObj = new Date(startDate);
-      // Map to track unique students across all committees to import them to Master List
       const allUniqueStudentsMap = new Map<string, Student>();
 
-      // Helper to determine sort weight for grade
       const getGradeWeight = (grade: string) => {
           if (grade.includes('أول') || grade.includes('اول') || grade.includes('1')) return 1;
           if (grade.includes('ثاني') || grade.includes('2')) return 2;
@@ -271,40 +307,32 @@ export const ExamManagement: React.FC = () => {
           return 99; // Others at the end
       };
 
-      // Iterate through the predefined schedule
-      FIXED_SCHEDULE.forEach((scheduleItem, idx) => {
-          const currentDay = new Date(startDateObj);
-          currentDay.setDate(startDateObj.getDate() + scheduleItem.dayOffset);
-          const dateStr = currentDay.toISOString().split('T')[0];
+      // USE THE EDITED SCHEDULE CONFIG
+      scheduleConfig.forEach((scheduleItem) => {
+          const dateStr = scheduleItem.date;
 
-          // For each committee, check if they have students for this schedule item
           importedCommittees.forEach(comm => {
-              // Determine if this committee has any relevant grades for this schedule block
               const relevantSubjects: string[] = [];
               let affectedStudents: Student[] = [];
 
               comm.students.forEach(student => {
-                  // Add to master list tracker (if not already added)
                   if (!allUniqueStudentsMap.has(student.id)) {
                       allUniqueStudentsMap.set(student.id, student);
                   }
 
                   const sGradeNorm = normalizeGrade(student.grade);
-                  // Check if this student's grade has a subject in this schedule slot
-                  const subject = scheduleItem.subjects[sGradeNorm as keyof typeof scheduleItem.subjects];
+                  const subject = scheduleItem.subjects[sGradeNorm];
                   
                   if (subject) {
                       relevantSubjects.push(subject);
                       affectedStudents.push({
                           ...student,
-                          subject: subject // Assign specific subject to student
+                          subject: subject 
                       });
                   }
               });
 
-              // If this committee has students taking an exam in this slot
               if (affectedStudents.length > 0) {
-                  // SORT STUDENTS BY GRADE WEIGHT HERE
                   affectedStudents.sort((a, b) => getGradeWeight(a.grade) - getGradeWeight(b.grade));
 
                   const uniqueSubjects = unique(relevantSubjects);
@@ -312,7 +340,7 @@ export const ExamManagement: React.FC = () => {
                   
                   newExams.push({
                       id: examId,
-                      subject: uniqueSubjects.join(' + '), // e.g. "رياضيات" or "فيزياء + أحياء"
+                      subject: uniqueSubjects.join(' + '), 
                       grades: comm.grades,
                       committeeNumber: comm.committeeNumber,
                       location: comm.location,
@@ -322,7 +350,6 @@ export const ExamManagement: React.FC = () => {
                       period: scheduleItem.periodLabel,
                       status: EnvelopeStatus.PENDING,
                       students: affectedStudents,
-                      // Default to PRESENT so teacher only marks absentees
                       attendance: affectedStudents.map(s => ({ studentId: s.id, status: AttendanceStatus.PRESENT }))
                   });
               }
@@ -330,14 +357,12 @@ export const ExamManagement: React.FC = () => {
       });
 
       if (newExams.length === 0) {
-          alert("لم يتم توليد أي اختبارات. يرجى التأكد من أن أسماء الصفوف في الملف (أول ثانوي، ثاني ثانوي...) تتطابق مع الجدول.");
+          alert("لم يتم توليد أي اختبارات. تأكد من صحة البيانات.");
           return;
       }
 
-      // 1. Save Exams to Database
       importExams(newExams);
 
-      // 2. Save Students to Master Student Database (For Student Management Tab)
       const masterStudentList = Array.from(allUniqueStudentsMap.values());
       if (masterStudentList.length > 0) {
           importStudents(masterStudentList);
@@ -379,9 +404,9 @@ export const ExamManagement: React.FC = () => {
 
   const downloadTemplate = () => {
     const ws = XLSX.utils.aoa_to_sheet([
-      ["اللجنة", "المقر", "اسم الطالب", "رقم الجلوس", "الصف", "المرحلة", "الفصل"],
-      ["101", "الدور الأول", "خالد عبدالله", "2005", "أول ثانوي", "الثانوية", "1/2"],
-      ["101", "الدور الأول", "سعد محمد", "2006", "ثاني ثانوي", "الثانوية", "2/1"]
+      ["اللجنة", "المقر", "اسم الطالب", "رقم الجلوس", "الصف", "المرحلة", "الفصل", "رقم الجوال"],
+      ["101", "الدور الأول", "خالد عبدالله", "2005", "أول ثانوي", "الثانوية", "1/2", "0550000000"],
+      ["101", "الدور الأول", "سعد محمد", "2006", "ثاني ثانوي", "الثانوية", "2/1", "0500000000"]
     ]);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "بيانات_الطلاب_واللجان");
@@ -604,70 +629,101 @@ export const ExamManagement: React.FC = () => {
          </div>
       )}
 
-      {/* SCHEDULE WIZARD MODAL */}
+      {/* SCHEDULE WIZARD MODAL - FULLY EDITABLE */}
       {showWizard && (
           <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-              <div className="bg-white rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl animate-scale-in">
-                  <div className="bg-gray-900 text-white p-6 flex justify-between items-center">
+              <div className="bg-white rounded-2xl w-full max-w-4xl overflow-hidden shadow-2xl animate-scale-in flex flex-col max-h-[90vh]">
+                  <div className="bg-gray-900 text-white p-6 flex justify-between items-center shrink-0">
                       <div className="flex items-center gap-3">
                           <Settings className="text-primary-400" />
                           <div>
-                              <h3 className="text-xl font-bold">توليد الجدول حسب النموذج المعتمد</h3>
-                              <p className="text-gray-400 text-xs">تم قراءة {importedCommittees.length} لجنة من الملف.</p>
+                              <h3 className="text-xl font-bold">إعداد وتعديل جدول الاختبارات</h3>
+                              <p className="text-gray-400 text-xs">تم قراءة {importedCommittees.length} لجنة. يمكنك تعديل الأوقات والتواريخ أدناه قبل الاعتماد.</p>
                           </div>
                       </div>
                       <button onClick={() => setShowWizard(false)} className="hover:bg-white/20 p-2 rounded-full"><X size={20}/></button>
                   </div>
                   
-                  <div className="p-8 space-y-6">
-                      <div className="bg-blue-50 border border-blue-100 p-4 rounded-xl flex gap-3">
+                  <div className="p-6 overflow-y-auto flex-1">
+                      <div className="bg-blue-50 border border-blue-100 p-4 rounded-xl flex gap-3 mb-6">
                           <Info className="text-blue-600 shrink-0" size={24} />
                           <div className="text-sm text-blue-800">
-                              <p className="font-bold mb-1">الجدول المعتمد</p>
-                              <p>سيتم توليد الاختبارات تلقائياً بناءً على الجدول: (رياضيات يوم 1)، (إنجليزي يوم 2)، (كيمياء يوم 3)... مع مراعاة المواد المختلفة لكل صف (مثل أحياء/علوم أرض يوم 5).</p>
+                              <p className="font-bold mb-1">تعليمات الجدول</p>
+                              <p>يتم تعبئة الجدول تلقائياً بناءً على تاريخ البداية. يمكنك تعديل التاريخ، وقت البدء، ووقت النهاية يدوياً لأي فترة. سيتم تطبيق هذه المواعيد على جميع اللجان.</p>
                           </div>
                       </div>
 
-                      <div>
-                          <label className="block text-sm font-bold text-gray-700 mb-2">تاريخ بداية الاختبارات (اليوم الأول)</label>
-                          <input 
-                            type="date" 
-                            value={startDate}
-                            onChange={e => setStartDate(e.target.value)}
-                            className="w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-primary-500 outline-none"
-                          />
-                          <p className="text-xs text-gray-500 mt-2">سيوافق اليوم الأول مادة الرياضيات لجميع الصفوف.</p>
+                      <div className="flex items-end gap-4 mb-6">
+                           <div className="flex-1">
+                                <label className="block text-sm font-bold text-gray-700 mb-2">تاريخ بداية الاختبارات (لإعادة التعيين)</label>
+                                <input 
+                                    type="date" 
+                                    value={startDate}
+                                    onChange={e => setStartDate(e.target.value)}
+                                    className="w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-primary-500 outline-none"
+                                />
+                           </div>
+                           <div className="pb-3 text-xs text-gray-500">
+                               تغيير هذا التاريخ سيقوم بإعادة حساب تواريخ الجدول أدناه تلقائياً.
+                           </div>
                       </div>
 
                       <div className="border border-gray-200 rounded-xl overflow-hidden text-sm">
                           <table className="w-full text-right bg-white">
-                              <thead className="bg-gray-50">
+                              <thead className="bg-gray-100 text-gray-700 font-bold">
                                   <tr>
-                                      <th className="p-3 border-b">اليوم</th>
+                                      <th className="p-3 border-b w-40">التاريخ</th>
                                       <th className="p-3 border-b">الفترة</th>
-                                      <th className="p-3 border-b">أبرز المواد</th>
+                                      <th className="p-3 border-b w-32">من</th>
+                                      <th className="p-3 border-b w-32">إلى</th>
+                                      <th className="p-3 border-b">أبرز المواد (للتوضيح)</th>
                                   </tr>
                               </thead>
                               <tbody>
-                                  {FIXED_SCHEDULE.map((s, i) => (
-                                      <tr key={i} className="border-b last:border-0 hover:bg-gray-50">
-                                          <td className="p-3">اليوم {s.dayOffset + 1}</td>
-                                          <td className="p-3">{s.periodLabel}</td>
-                                          <td className="p-3 text-gray-600">
-                                              {unique(Object.values(s.subjects)).join('، ')}
+                                  {scheduleConfig.map((item, index) => (
+                                      <tr key={index} className="border-b last:border-0 hover:bg-gray-50 transition-colors">
+                                          <td className="p-2">
+                                              <input 
+                                                type="date" 
+                                                value={item.date}
+                                                onChange={(e) => updateScheduleItem(index, 'date', e.target.value)}
+                                                className="w-full p-2 border border-gray-300 rounded focus:border-primary-500 outline-none text-sm"
+                                              />
+                                          </td>
+                                          <td className="p-3 font-bold text-gray-700">{item.periodLabel}</td>
+                                          <td className="p-2">
+                                              <input 
+                                                type="time" 
+                                                value={item.startTime}
+                                                onChange={(e) => updateScheduleItem(index, 'startTime', e.target.value)}
+                                                className="w-full p-2 border border-gray-300 rounded focus:border-primary-500 outline-none text-sm font-mono"
+                                              />
+                                          </td>
+                                          <td className="p-2">
+                                              <input 
+                                                type="time" 
+                                                value={item.endTime}
+                                                onChange={(e) => updateScheduleItem(index, 'endTime', e.target.value)}
+                                                className="w-full p-2 border border-gray-300 rounded focus:border-primary-500 outline-none text-sm font-mono"
+                                              />
+                                          </td>
+                                          <td className="p-3 text-gray-500 text-xs">
+                                              {unique(Object.values(item.subjects as Record<string, string>)).join('، ')}
                                           </td>
                                       </tr>
                                   ))}
                               </tbody>
                           </table>
                       </div>
-
+                  </div>
+                  
+                  <div className="p-6 border-t border-gray-100 bg-gray-50 shrink-0">
                       <button 
                         onClick={handleGenerate}
                         className="w-full bg-primary-600 text-white py-4 rounded-xl font-bold text-lg hover:bg-primary-700 transition-colors flex items-center justify-center gap-2 shadow-lg"
                       >
                           <Play size={24} />
-                          توليد واعتماد المظاريف
+                          توليد واعتماد المظاريف حسب الجدول أعلاه
                       </button>
                   </div>
               </div>
