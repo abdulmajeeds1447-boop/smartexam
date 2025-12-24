@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Camera, ScanLine, X, AlertTriangle } from 'lucide-react';
+import { QrReader } from 'react-qr-reader';
 
 interface ScannerProps {
   onScanSuccess: () => void;
@@ -10,25 +11,47 @@ export const Scanner: React.FC<ScannerProps> = ({ onScanSuccess }) => {
   const { exams, processCommitteeScan, currentUser } = useApp();
   const [cameraPermission, setCameraPermission] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [lastScannedData, setLastScannedData] = useState<string | null>(null);
 
   // Helper to extract unique committees that have exams TODAY
   const availableCommittees = Array.from<string>(new Set(
       exams.map(e => e.committeeNumber)
   )).sort();
 
+  const handleScan = async (data: string | null) => {
+    if (data && data !== lastScannedData && currentUser) {
+        setLastScannedData(data);
+        setErrorMsg(null);
+
+        // Parse JSON if the QR contains JSON data
+        let committeeId = data;
+        try {
+            const parsed = JSON.parse(data);
+            if (parsed.type === 'committee' && parsed.id) {
+                committeeId = parsed.id;
+            }
+        } catch (e) {
+            // It's just a raw string, use as is
+        }
+
+        const result = await processCommitteeScan(committeeId, currentUser.id);
+        
+        if (result.success) {
+            onScanSuccess();
+        } else {
+            setErrorMsg(result.message || 'خطأ في المسح');
+            // Allow rescanning after 3 seconds
+            setTimeout(() => {
+                setLastScannedData(null);
+                setErrorMsg(null);
+            }, 3000);
+        }
+    }
+  };
+
   const handleSimulatedScan = async (committeeId: string) => {
     if (!currentUser) return;
-    setErrorMsg(null);
-
-    const result = await processCommitteeScan(committeeId, currentUser.id);
-    
-    if (result.success) {
-        onScanSuccess();
-    } else {
-        setErrorMsg(result.message || 'خطأ في المسح');
-        // Clear error after 3 seconds
-        setTimeout(() => setErrorMsg(null), 3000);
-    }
+    handleScan(JSON.stringify({ type: 'committee', id: committeeId }));
   };
 
   if (!cameraPermission) {
@@ -39,7 +62,7 @@ export const Scanner: React.FC<ScannerProps> = ({ onScanSuccess }) => {
               </div>
               <h3 className="text-xl font-bold mb-2">الكاميرا غير مفعلة</h3>
               <p className="text-gray-500">يرجى السماح للتطبيق بالوصول للكاميرا لمسح رمز QR</p>
-              <button onClick={() => setCameraPermission(true)} className="mt-4 text-primary-600 font-bold">المحاولة مرة أخرى</button>
+              <button onClick={() => window.location.reload()} className="mt-4 text-primary-600 font-bold">تحديث الصفحة</button>
           </div>
       )
   }
@@ -47,17 +70,23 @@ export const Scanner: React.FC<ScannerProps> = ({ onScanSuccess }) => {
   return (
     <div className="flex flex-col h-[calc(100vh-140px)] md:h-auto relative bg-black rounded-xl overflow-hidden">
       {/* Camera Viewfinder UI */}
-      <div className="absolute inset-0 z-0">
-        <img 
-            src="https://images.unsplash.com/photo-1555529733-1b0728362699?auto=format&fit=crop&q=80&w=1000" 
-            className="w-full h-full object-cover opacity-50" 
-            alt="Camera Feed"
+      <div className="absolute inset-0 z-0 bg-black">
+         <QrReader
+            onResult={(result, error) => {
+                if (result) {
+                    handleScan(result?.text);
+                }
+                // Ignore errors as they fire frequently when no QR is found
+            }}
+            constraints={{ facingMode: 'environment' }}
+            containerStyle={{ width: '100%', height: '100%' }}
+            videoStyle={{ objectFit: 'cover' }}
         />
-        <div className="absolute inset-0 bg-black/40"></div>
+        <div className="absolute inset-0 bg-black/30 pointer-events-none"></div>
       </div>
 
-      <div className="relative z-10 flex flex-col h-full items-center justify-between p-8">
-        <div className="text-white text-center">
+      <div className="relative z-10 flex flex-col h-full items-center justify-between p-8 pointer-events-none">
+        <div className="text-white text-center pointer-events-auto">
             <h2 className="text-xl font-bold mb-1">مسح رمز اللجنة</h2>
             <p className="text-white/70 text-sm">أهلاً، أستاذ {currentUser?.name}</p>
             <p className="text-white/70 text-xs mt-1">وجّه الكاميرا نحو رمز QR الملصق على باب اللجنة أو المظروف</p>
@@ -86,10 +115,10 @@ export const Scanner: React.FC<ScannerProps> = ({ onScanSuccess }) => {
             )}
         </div>
 
-        {/* Simulation Controls */}
-        <div className="w-full max-w-md bg-white/10 backdrop-blur-md rounded-xl p-4 border border-white/20 max-h-48 overflow-y-auto no-scrollbar">
+        {/* Simulation Controls - Keep for testing if camera fails */}
+        <div className="w-full max-w-md bg-white/10 backdrop-blur-md rounded-xl p-4 border border-white/20 max-h-48 overflow-y-auto no-scrollbar pointer-events-auto">
             <p className="text-white/60 text-xs text-center mb-3 uppercase tracking-wider">
-                محاكاة مسح (اختر رقم اللجنة)
+                للاختبار اليدوي (بدون كاميرا)
             </p>
             <div className="grid grid-cols-2 gap-2">
                 {availableCommittees.length === 0 && (

@@ -4,6 +4,7 @@ import { QRCodeCanvas } from 'qrcode.react';
 import { Printer, X, CheckCircle, UploadCloud, MapPin, Calendar, Download, Settings, Play, Info, Trash2, ScanLine, AlertTriangle } from 'lucide-react';
 import { EnvelopeStatus, ExamEnvelope, Student, AttendanceStatus } from '../../types';
 import * as XLSX from 'xlsx';
+import { QrReader } from 'react-qr-reader';
 
 // Internal type for the Wizard
 interface CommitteeData {
@@ -106,6 +107,7 @@ export const ExamManagement: React.FC = () => {
   const [showWizard, setShowWizard] = useState(false);
   const [showScanner, setShowScanner] = useState(false); // NEW STATE FOR SCANNER MODAL
   const [scanResult, setScanResult] = useState<{success: boolean, msg: string} | null>(null);
+  const [lastScannedId, setLastScannedId] = useState<string | null>(null);
   
   const [importedCommittees, setImportedCommittees] = useState<CommitteeData[]>([]);
   const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
@@ -304,6 +306,9 @@ export const ExamManagement: React.FC = () => {
   };
 
   const handleControlScan = async (committeeId: string) => {
+    if (committeeId === lastScannedId) return; // Prevent double scan
+
+    setLastScannedId(committeeId);
     setScanResult(null);
     const result = await processAdminDeliveryScan(committeeId);
     setScanResult({
@@ -311,9 +316,24 @@ export const ExamManagement: React.FC = () => {
         msg: result.message || (result.success ? "تم الاستلام بنجاح" : "حدث خطأ")
     });
     
-    if (result.success) {
-        setTimeout(() => setScanResult(null), 2000);
-    }
+    // Reset after delay
+    setTimeout(() => {
+        setScanResult(null);
+        setLastScannedId(null);
+    }, 3000);
+  };
+
+  const handleQrScan = (data: string | null) => {
+      if (data) {
+          let cId = data;
+          try {
+              const parsed = JSON.parse(data);
+              if (parsed.type === 'committee' && parsed.id) {
+                  cId = parsed.id;
+              }
+          } catch(e) {}
+          handleControlScan(cId);
+      }
   };
 
   const downloadTemplate = () => {
@@ -484,32 +504,37 @@ export const ExamManagement: React.FC = () => {
             <div className="bg-gray-900 rounded-2xl w-full max-w-lg overflow-hidden relative shadow-2xl animate-scale-in border border-gray-700">
                <button 
                  onClick={() => setShowScanner(false)} 
-                 className="absolute top-4 right-4 bg-white/10 hover:bg-white/20 p-2 rounded-full text-white z-20"
+                 className="absolute top-4 right-4 bg-white/10 hover:bg-white/20 p-2 rounded-full text-white z-20 pointer-events-auto"
                >
                  <X size={20}/>
                </button>
                
-               <div className="p-8 flex flex-col items-center">
-                   <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
+               <div className="p-8 flex flex-col items-center relative h-[450px]">
+                   <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2 z-10">
                        <ScanLine className="text-purple-400" />
                        ماسح استلام المظاريف (الكنترول)
                    </h3>
 
-                   <div className="relative mb-8">
-                        <div className="w-64 h-64 border-2 border-white/30 rounded-3xl relative overflow-hidden bg-black/50">
-                            {/* Simulated Camera Feed */}
-                            <img 
-                                src="https://images.unsplash.com/photo-1555529733-1b0728362699?auto=format&fit=crop&q=80&w=1000" 
-                                className="w-full h-full object-cover opacity-30" 
-                                alt="Camera"
-                            />
+                   <div className="absolute inset-0 z-0 bg-black">
+                       <QrReader
+                           onResult={(result, error) => {
+                               if (result) handleQrScan(result?.text);
+                           }}
+                           constraints={{ facingMode: 'environment' }}
+                           containerStyle={{ width: '100%', height: '100%' }}
+                           videoStyle={{ objectFit: 'cover', opacity: 0.6 }}
+                       />
+                   </div>
+
+                   <div className="relative z-10 w-full flex flex-col items-center mt-10">
+                        <div className="w-64 h-64 border-2 border-white/50 rounded-3xl relative overflow-hidden bg-transparent">
                             <div className="absolute inset-0 border-2 border-purple-500 rounded-3xl animate-pulse"></div>
                             <div className="absolute top-0 left-0 w-full h-1 bg-purple-500 shadow-[0_0_15px_rgba(168,85,247,0.8)] animate-scan"></div>
                         </div>
 
                         {/* Result Message */}
                         {scanResult && (
-                             <div className="absolute -bottom-16 left-1/2 transform -translate-x-1/2 w-64 text-center">
+                             <div className="absolute bottom-20 left-1/2 transform -translate-x-1/2 w-64 text-center">
                                 <div className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 justify-center shadow-lg animate-fade-in ${
                                     scanResult.success ? 'bg-green-500 text-white' : 'bg-red-500 text-white'
                                 }`}>
@@ -521,7 +546,7 @@ export const ExamManagement: React.FC = () => {
                    </div>
 
                    {/* Simulation List */}
-                   <div className="w-full bg-white/5 rounded-xl p-4 border border-white/10">
+                   <div className="w-full bg-white/5 rounded-xl p-4 border border-white/10 absolute bottom-4 z-10">
                        <p className="text-gray-400 text-xs text-center mb-3 uppercase tracking-wider">
                            محاكاة المسح (المظاريف الجاهزة للتسليم)
                        </p>
