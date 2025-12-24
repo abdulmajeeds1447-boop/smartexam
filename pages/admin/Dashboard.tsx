@@ -5,7 +5,7 @@ import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, 
 import { Activity, Users, FileCheck, AlertTriangle, Layers, CalendarClock } from 'lucide-react';
 
 export const AdminDashboard: React.FC = () => {
-  const { exams, students } = useApp();
+  const { exams, students, teachers } = useApp();
 
   // --- 1. FILTER FOR LIVE VIEW (TODAY or ACTIVE) ---
   const today = new Date().toISOString().split('T')[0];
@@ -126,7 +126,7 @@ export const AdminDashboard: React.FC = () => {
                 <th className="p-4 font-medium">المادة / الصفوف</th>
                 <th className="p-4 font-medium">الوقت</th>
                 <th className="p-4 font-medium">الحالة</th>
-                <th className="p-4 font-medium">المراقب</th>
+                <th className="p-4 font-medium">المعلم المراقب</th>
                 <th className="p-4 font-medium">الحضور</th>
               </tr>
             </thead>
@@ -146,6 +146,10 @@ export const AdminDashboard: React.FC = () => {
                     const present = exam.attendance.filter(a => a.status === AttendanceStatus.PRESENT).length;
                     const percentage = total > 0 ? Math.round((present / total) * 100) : 0;
                     
+                    // Lookup Teacher Name
+                    const assignedTeacher = teachers.find(t => t.id === exam.teacherId);
+                    const teacherDisplayName = assignedTeacher ? assignedTeacher.name : (exam.teacherId || '-');
+
                     return (
                     <tr key={exam.id} className="hover:bg-blue-50/50 transition-colors">
                         <td className="p-4">
@@ -167,9 +171,9 @@ export const AdminDashboard: React.FC = () => {
                         </td>
                         <td className="p-4 text-sm text-gray-500">
                             {exam.teacherId ? (
-                                <span className="flex items-center gap-1 text-green-700 font-medium">
+                                <span className="flex items-center gap-1 text-green-700 font-medium bg-green-50 px-2 py-1 rounded-lg w-fit">
                                     <Users size={14} />
-                                    {exam.teacherId}
+                                    <span className="truncate max-w-[120px]" title={teacherDisplayName}>{teacherDisplayName}</span>
                                 </span>
                             ) : '-'}
                         </td>
