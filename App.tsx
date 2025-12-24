@@ -7,6 +7,7 @@ import { AdminDashboard } from './pages/admin/Dashboard';
 import { ExamManagement } from './pages/admin/ExamManagement';
 import { TeacherManagement } from './pages/admin/TeacherManagement';
 import { StudentManagement } from './pages/admin/StudentManagement';
+import { Reports } from './pages/admin/Reports';
 import { Scanner } from './pages/teacher/Scanner';
 import { ExamSession } from './pages/teacher/Session';
 
@@ -31,6 +32,7 @@ const AppContent: React.FC = () => {
         case 'exams': return <ExamManagement />;
         case 'teachers': return <TeacherManagement />;
         case 'students': return <StudentManagement />;
+        case 'reports': return <Reports />;
         default: return <AdminDashboard />;
       }
     } else {

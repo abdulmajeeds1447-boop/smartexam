@@ -27,6 +27,7 @@ interface AppContextType {
   // Actions
   loginTeacher: (teacherId: string) => Promise<boolean>;
   processCommitteeScan: (committeeNumber: string, teacherId: string) => Promise<{success: boolean, message?: string}>;
+  processAdminDeliveryScan: (committeeNumber: string) => Promise<{success: boolean, message?: string}>; // NEW
   scanEnvelope: (examId: string, teacherId: string) => Promise<void>;
   markAttendance: (examId: string, studentId: string, status: AttendanceStatus) => Promise<void>;
   submitEnvelope: (examId: string) => Promise<void>;
@@ -336,6 +337,48 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
+  // NEW: Process Admin/Control Delivery Scan
+  const processAdminDeliveryScan = async (committeeNumber: string): Promise<{success: boolean, message?: string}> => {
+    try {
+        const today = new Date().toISOString().split('T')[0];
+
+        // Find exams for this committee TODAY that are marked COMPLETED (Teacher finished them)
+        const completedExams = exams.filter(e => 
+            e.committeeNumber === committeeNumber && 
+            e.date === today &&
+            e.status === EnvelopeStatus.COMPLETED
+        );
+
+        if (completedExams.length === 0) {
+             // Check if already delivered
+             const delivered = exams.some(e => 
+                e.committeeNumber === committeeNumber && 
+                e.date === today && 
+                e.status === EnvelopeStatus.DELIVERED
+            );
+            
+            if (delivered) {
+                 return { success: false, message: 'تم تسليم المظروف مسبقاً.' };
+            }
+
+            return { success: false, message: 'لم يتم إنهاء الاختبار من قبل المعلم بعد، أو لا يوجد اختبار اليوم.' };
+        }
+
+        // Mark all completed exams for this committee today as DELIVERED
+        for (const exam of completedExams) {
+            await deliverEnvelopeToControl(exam.id);
+        }
+
+        return { success: true, message: `تم استلام ${completedExams.length} مظروف من اللجنة ${committeeNumber}` };
+
+    } catch (error: any) {
+        const msg = error?.message || String(error);
+        console.error("Admin Delivery Scan Error:", msg);
+        return { success: false, message: msg };
+    }
+  };
+
+
   const scanEnvelope = async (examId: string, teacherId: string) => {
     try {
         const examRef = doc(db, 'exams', examId);
@@ -414,7 +457,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       notifications,
       activeExamId,
       loginTeacher,
-      processCommitteeScan, 
+      processCommitteeScan,
+      processAdminDeliveryScan, // Export new function
       scanEnvelope,
       markAttendance,
       submitEnvelope,

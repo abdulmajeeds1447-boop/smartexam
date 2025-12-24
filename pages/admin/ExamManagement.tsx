@@ -1,7 +1,7 @@
 import React, { useState, useRef, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { QRCodeCanvas } from 'qrcode.react';
-import { Printer, X, CheckCircle, UploadCloud, MapPin, Calendar, Download, Settings, Play, Info, Trash2 } from 'lucide-react';
+import { Printer, X, CheckCircle, UploadCloud, MapPin, Calendar, Download, Settings, Play, Info, Trash2, ScanLine, AlertTriangle } from 'lucide-react';
 import { EnvelopeStatus, ExamEnvelope, Student, AttendanceStatus } from '../../types';
 import * as XLSX from 'xlsx';
 
@@ -98,12 +98,15 @@ const normalizeGrade = (gradeStr: string): string => {
 };
 
 export const ExamManagement: React.FC = () => {
-  // Added importStudents to destructuring
-  const { exams, deliverEnvelopeToControl, importExams, clearAllExams, importStudents } = useApp();
+  // Added processAdminDeliveryScan
+  const { exams, deliverEnvelopeToControl, importExams, clearAllExams, importStudents, processAdminDeliveryScan } = useApp();
   const [selectedCommittee, setSelectedCommittee] = useState<{number: string, location: string, grades: string[]} | null>(null);
   
   // Wizard State
   const [showWizard, setShowWizard] = useState(false);
+  const [showScanner, setShowScanner] = useState(false); // NEW STATE FOR SCANNER MODAL
+  const [scanResult, setScanResult] = useState<{success: boolean, msg: string} | null>(null);
+  
   const [importedCommittees, setImportedCommittees] = useState<CommitteeData[]>([]);
   const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
   const [showDeleteAllModal, setShowDeleteAllModal] = useState(false);
@@ -118,6 +121,16 @@ export const ExamManagement: React.FC = () => {
           groups[exam.committeeNumber].push(exam);
       });
       return groups;
+  }, [exams]);
+
+  // List of committees that have COMPLETED exams today but NOT DELIVERED
+  const pendingDeliveryCommittees = useMemo(() => {
+      const today = new Date().toISOString().split('T')[0];
+      const pending = exams.filter(e => 
+        e.date === today && 
+        e.status === EnvelopeStatus.COMPLETED
+      ).map(e => e.committeeNumber);
+      return Array.from(new Set(pending)).sort();
   }, [exams]);
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -266,7 +279,8 @@ export const ExamManagement: React.FC = () => {
                       period: scheduleItem.periodLabel,
                       status: EnvelopeStatus.PENDING,
                       students: affectedStudents,
-                      attendance: affectedStudents.map(s => ({ studentId: s.id, status: AttendanceStatus.UNKNOWN }))
+                      // Default to PRESENT so teacher only marks absentees
+                      attendance: affectedStudents.map(s => ({ studentId: s.id, status: AttendanceStatus.PRESENT }))
                   });
               }
           });
@@ -287,6 +301,19 @@ export const ExamManagement: React.FC = () => {
       }
 
       setShowWizard(false);
+  };
+
+  const handleControlScan = async (committeeId: string) => {
+    setScanResult(null);
+    const result = await processAdminDeliveryScan(committeeId);
+    setScanResult({
+        success: result.success,
+        msg: result.message || (result.success ? "تم الاستلام بنجاح" : "حدث خطأ")
+    });
+    
+    if (result.success) {
+        setTimeout(() => setScanResult(null), 2000);
+    }
   };
 
   const downloadTemplate = () => {
@@ -310,6 +337,15 @@ export const ExamManagement: React.FC = () => {
         </div>
         
         <div className="flex gap-2 flex-wrap">
+             <button 
+                onClick={() => setShowScanner(true)}
+                className="bg-purple-600 text-white border border-purple-600 px-4 py-3 rounded-lg hover:bg-purple-700 flex items-center gap-2 shadow-lg shadow-purple-200"
+                title="استلام مظروف عبر QR"
+            >
+                <ScanLine size={20} />
+                <span className="hidden md:inline">استلام للكنترول (Scan)</span>
+            </button>
+
              <button 
                 onClick={() => setShowDeleteAllModal(true)}
                 className="bg-red-50 text-red-600 border border-red-100 px-4 py-3 rounded-lg hover:bg-red-100 flex items-center gap-2"
@@ -440,6 +476,74 @@ export const ExamManagement: React.FC = () => {
                 );
             })}
           </div>
+      )}
+
+      {/* ADMIN SCANNER MODAL */}
+      {showScanner && (
+         <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
+            <div className="bg-gray-900 rounded-2xl w-full max-w-lg overflow-hidden relative shadow-2xl animate-scale-in border border-gray-700">
+               <button 
+                 onClick={() => setShowScanner(false)} 
+                 className="absolute top-4 right-4 bg-white/10 hover:bg-white/20 p-2 rounded-full text-white z-20"
+               >
+                 <X size={20}/>
+               </button>
+               
+               <div className="p-8 flex flex-col items-center">
+                   <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
+                       <ScanLine className="text-purple-400" />
+                       ماسح استلام المظاريف (الكنترول)
+                   </h3>
+
+                   <div className="relative mb-8">
+                        <div className="w-64 h-64 border-2 border-white/30 rounded-3xl relative overflow-hidden bg-black/50">
+                            {/* Simulated Camera Feed */}
+                            <img 
+                                src="https://images.unsplash.com/photo-1555529733-1b0728362699?auto=format&fit=crop&q=80&w=1000" 
+                                className="w-full h-full object-cover opacity-30" 
+                                alt="Camera"
+                            />
+                            <div className="absolute inset-0 border-2 border-purple-500 rounded-3xl animate-pulse"></div>
+                            <div className="absolute top-0 left-0 w-full h-1 bg-purple-500 shadow-[0_0_15px_rgba(168,85,247,0.8)] animate-scan"></div>
+                        </div>
+
+                        {/* Result Message */}
+                        {scanResult && (
+                             <div className="absolute -bottom-16 left-1/2 transform -translate-x-1/2 w-64 text-center">
+                                <div className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 justify-center shadow-lg animate-fade-in ${
+                                    scanResult.success ? 'bg-green-500 text-white' : 'bg-red-500 text-white'
+                                }`}>
+                                    {scanResult.success ? <CheckCircle size={16} /> : <AlertTriangle size={16} />}
+                                    <span>{scanResult.msg}</span>
+                                </div>
+                            </div>
+                        )}
+                   </div>
+
+                   {/* Simulation List */}
+                   <div className="w-full bg-white/5 rounded-xl p-4 border border-white/10">
+                       <p className="text-gray-400 text-xs text-center mb-3 uppercase tracking-wider">
+                           محاكاة المسح (المظاريف الجاهزة للتسليم)
+                       </p>
+                       <div className="grid grid-cols-2 gap-2 max-h-32 overflow-y-auto no-scrollbar">
+                           {pendingDeliveryCommittees.length === 0 && (
+                               <div className="col-span-2 text-gray-600 text-center text-xs py-2">لا توجد مظاريف منتهية بانتظار التسليم حالياً</div>
+                           )}
+                           {pendingDeliveryCommittees.map(committeeNum => (
+                               <button
+                                   key={committeeNum}
+                                   onClick={() => handleControlScan(committeeNum)}
+                                   className="bg-purple-600/20 text-purple-200 py-2 rounded-lg text-sm hover:bg-purple-600 hover:text-white transition-all flex items-center justify-center gap-2 border border-purple-500/30"
+                               >
+                                   <span>لجنة {committeeNum}</span>
+                                   <ScanLine size={12} />
+                               </button>
+                           ))}
+                       </div>
+                   </div>
+               </div>
+            </div>
+         </div>
       )}
 
       {/* SCHEDULE WIZARD MODAL */}

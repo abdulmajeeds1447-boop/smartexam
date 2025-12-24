@@ -1,7 +1,7 @@
 import React from 'react';
 import { useApp } from '../context/AppContext';
 import { Role } from '../types';
-import { LogOut, LayoutDashboard, QrCode, FileText, Bell, Users, GraduationCap } from 'lucide-react';
+import { LogOut, LayoutDashboard, QrCode, FileText, Bell, Users, GraduationCap, Printer } from 'lucide-react';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -20,8 +20,8 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentPag
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
-      {/* Top Navigation */}
-      <header className="bg-white shadow-sm sticky top-0 z-50">
+      {/* Top Navigation - Hidden on Print */}
+      <header className="bg-white shadow-sm sticky top-0 z-50 print:hidden">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="bg-primary-600 text-white p-2 rounded-lg">
@@ -58,10 +58,10 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentPag
       </header>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col md:flex-row max-w-7xl mx-auto w-full p-4 gap-4">
-        {/* Sidebar / Bottom Nav for Mobile */}
+      <main className="flex-1 flex flex-col md:flex-row max-w-7xl mx-auto w-full p-4 gap-4 print:p-0 print:w-full print:max-w-none">
+        {/* Sidebar / Bottom Nav for Mobile - Hidden on Print */}
         {userRole === Role.ADMIN ? (
-          <nav className="hidden md:flex flex-col w-64 bg-white rounded-xl shadow-sm p-4 h-fit sticky top-24">
+          <nav className="hidden md:flex flex-col w-64 bg-white rounded-xl shadow-sm p-4 h-fit sticky top-24 print:hidden">
             <NavItem 
               icon={<LayoutDashboard />} 
               label="لوحة التحكم" 
@@ -86,6 +86,13 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentPag
               active={currentPage === 'students'} 
               onClick={() => onNavigate('students')} 
             />
+            <div className="my-2 border-t border-gray-100"></div>
+            <NavItem 
+              icon={<Printer />} 
+              label="التقارير والسجلات" 
+              active={currentPage === 'reports'} 
+              onClick={() => onNavigate('reports')} 
+            />
           </nav>
         ) : null}
 
@@ -94,9 +101,9 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentPag
         </div>
       </main>
 
-      {/* Mobile Bottom Nav (Teacher only) */}
+      {/* Mobile Bottom Nav (Teacher only) - Hidden on Print */}
       {userRole === Role.TEACHER && (
-        <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] p-4 flex justify-around z-40 pb-safe">
+        <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] p-4 flex justify-around z-40 pb-safe print:hidden">
            <button 
              onClick={() => onNavigate('scanner')}
              className={`flex flex-col items-center gap-1 ${currentPage === 'scanner' ? 'text-primary-600' : 'text-gray-400'}`}
