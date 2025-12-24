@@ -1,0 +1,7 @@
+{
+  "name": "Smart Exam Manager (Nizam)",
+  "description": "An intelligent electronic exam management system enabling QR-based envelope tracking, real-time attendance monitoring, and smart reporting for schools.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
