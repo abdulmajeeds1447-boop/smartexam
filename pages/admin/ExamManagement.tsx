@@ -1,10 +1,10 @@
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { QRCodeCanvas } from 'qrcode.react';
 import { Printer, X, CheckCircle, UploadCloud, MapPin, Calendar, Download, Settings, Play, Info, Trash2, ScanLine, AlertTriangle } from 'lucide-react';
 import { EnvelopeStatus, ExamEnvelope, Student, AttendanceStatus } from '../../types';
 import * as XLSX from 'xlsx';
-import { QrReader } from 'react-qr-reader';
+import { Html5Qrcode } from 'html5-qrcode';
 
 // Internal type for the Wizard
 interface CommitteeData {
@@ -114,6 +114,7 @@ export const ExamManagement: React.FC = () => {
   const [showDeleteAllModal, setShowDeleteAllModal] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const scannerRef = useRef<Html5Qrcode | null>(null);
 
   // Group Exams by Committee for Display
   const examsByCommittee = useMemo(() => {
@@ -134,6 +135,46 @@ export const ExamManagement: React.FC = () => {
       ).map(e => e.committeeNumber);
       return Array.from(new Set(pending)).sort();
   }, [exams]);
+
+  // Initialize Scanner when modal opens
+  useEffect(() => {
+    if (showScanner) {
+        const initScanner = async () => {
+             // Clean up previous instance if any
+            if (scannerRef.current) {
+                await scannerRef.current.clear();
+            }
+
+            const html5QrCode = new Html5Qrcode("admin-reader");
+            scannerRef.current = html5QrCode;
+            try {
+                 await html5QrCode.start(
+                    { facingMode: "environment" },
+                    { fps: 10, qrbox: { width: 250, height: 250 } },
+                    (text) => handleQrScan(text),
+                    () => {}
+                 );
+            } catch(e) {
+                console.error("Scanner Error", e);
+            }
+        };
+        // Delay to allow DOM to mount
+        setTimeout(initScanner, 300);
+    } else {
+        // Cleanup on close
+        if (scannerRef.current) {
+            scannerRef.current.stop().then(() => {
+                scannerRef.current?.clear();
+            }).catch(console.error);
+        }
+    }
+    return () => {
+         if (scannerRef.current) {
+            scannerRef.current.stop().catch(() => {});
+            scannerRef.current.clear();
+        }
+    };
+  }, [showScanner]);
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -515,21 +556,13 @@ export const ExamManagement: React.FC = () => {
                        ماسح استلام المظاريف (الكنترول)
                    </h3>
 
-                   <div className="absolute inset-0 z-0 bg-black">
-                       <QrReader
-                           onResult={(result, error) => {
-                               if (result) handleQrScan(result?.text);
-                           }}
-                           constraints={{ facingMode: 'environment' }}
-                           containerStyle={{ width: '100%', height: '100%' }}
-                           videoStyle={{ objectFit: 'cover', opacity: 0.6 }}
-                       />
+                   <div className="absolute inset-0 z-0 bg-black flex items-center justify-center">
+                        <div id="admin-reader" className="w-full h-full"></div>
                    </div>
 
-                   <div className="relative z-10 w-full flex flex-col items-center mt-10">
+                   <div className="relative z-10 w-full flex flex-col items-center mt-10 pointer-events-none">
                         <div className="w-64 h-64 border-2 border-white/50 rounded-3xl relative overflow-hidden bg-transparent">
                             <div className="absolute inset-0 border-2 border-purple-500 rounded-3xl animate-pulse"></div>
-                            <div className="absolute top-0 left-0 w-full h-1 bg-purple-500 shadow-[0_0_15px_rgba(168,85,247,0.8)] animate-scan"></div>
                         </div>
 
                         {/* Result Message */}
