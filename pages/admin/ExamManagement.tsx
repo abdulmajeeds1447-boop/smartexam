@@ -14,13 +14,13 @@ interface CommitteeData {
     students: Student[];
 }
 
-// --- DEFAULT TEMPLATE (Can be edited in UI) ---
+// --- DEFAULT TEMPLATE ---
 const DEFAULT_SCHEDULE_TEMPLATE = [
   // Sunday 15/7
   {
     periodLabel: 'الفترة الأولى',
     startTime: '07:30',
-    endTime: '10:00', // 2.5 Hours roughly
+    endTime: '10:00', 
     subjects: {
       'أول': 'رياضيات',
       'ثاني': 'رياضيات',
@@ -32,7 +32,7 @@ const DEFAULT_SCHEDULE_TEMPLATE = [
     startTime: '10:30',
     endTime: '12:30',
     subjects: {
-      'ثاني': 'كفايات لغوية' // Only 2nd Secondary
+      'ثاني': 'كفايات لغوية' 
     }
   },
   // Monday 16/7
@@ -84,7 +84,7 @@ const DEFAULT_SCHEDULE_TEMPLATE = [
 // Helper to get unique values
 const unique = (arr: string[]) => Array.from(new Set(arr));
 
-// Helper to normalize grade strings for matching
+// Helper to normalize grade strings
 const normalizeGrade = (gradeStr: string): string => {
     if (gradeStr.includes('أول') || gradeStr.includes('اول') || gradeStr.includes('1')) return 'أول';
     if (gradeStr.includes('ثاني') || gradeStr.includes('2')) return 'ثاني';
@@ -93,7 +93,6 @@ const normalizeGrade = (gradeStr: string): string => {
 };
 
 export const ExamManagement: React.FC = () => {
-  // Added processAdminDeliveryScan
   const { exams, deliverEnvelopeToControl, importExams, clearAllExams, importStudents, processAdminDeliveryScan } = useApp();
   const [selectedCommittee, setSelectedCommittee] = useState<{number: string, location: string, grades: string[]} | null>(null);
   
@@ -106,9 +105,7 @@ export const ExamManagement: React.FC = () => {
   const [importedCommittees, setImportedCommittees] = useState<CommitteeData[]>([]);
   const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
   
-  // NEW: Editable Schedule State
   const [scheduleConfig, setScheduleConfig] = useState<any[]>([]);
-
   const [showDeleteAllModal, setShowDeleteAllModal] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -134,13 +131,34 @@ export const ExamManagement: React.FC = () => {
       return Array.from(new Set(pending)).sort();
   }, [exams]);
 
-  // Initialize Scanner when modal opens
+  // --- FIX: Scanner Handling Logic ---
+  
+  // 1. Function to safely close the scanner BEFORE unmounting logic
+  const handleCloseScanner = async () => {
+      if (scannerRef.current) {
+          try {
+              // Pause first
+              await scannerRef.current.stop();
+              scannerRef.current.clear();
+          } catch (error) {
+              console.warn("Scanner stop error:", error);
+          }
+          scannerRef.current = null;
+      }
+      setShowScanner(false); // Close Modal only AFTER stopping
+  };
+
+  // 2. Effect for opening scanner
   useEffect(() => {
     if (showScanner) {
         const initScanner = async () => {
-             // Clean up previous instance if any
+            // Wait for DOM to be ready
+            await new Promise(r => setTimeout(r, 300));
+
+            // Clean previous instance if exists (safety check)
             if (scannerRef.current) {
-                await scannerRef.current.clear();
+                try { await scannerRef.current.stop(); } catch(e){}
+                scannerRef.current.clear();
             }
 
             const html5QrCode = new Html5Qrcode("admin-reader");
@@ -156,16 +174,10 @@ export const ExamManagement: React.FC = () => {
                 console.error("Scanner Error", e);
             }
         };
-        // Delay to allow DOM to mount
-        setTimeout(initScanner, 300);
-    } else {
-        // Cleanup on close
-        if (scannerRef.current) {
-            scannerRef.current.stop().then(() => {
-                scannerRef.current?.clear();
-            }).catch(console.error);
-        }
+        initScanner();
     }
+
+    // Cleanup when component unmounts (navigating away from page)
     return () => {
          if (scannerRef.current) {
             scannerRef.current.stop().catch(() => {});
@@ -179,17 +191,8 @@ export const ExamManagement: React.FC = () => {
     if (showWizard) {
         const start = new Date(startDate);
         let currentDayIndex = 0;
-        let lastDayOffset = 0;
 
         const newConfig = DEFAULT_SCHEDULE_TEMPLATE.map((item, index) => {
-            // Logic to increment day only when period resets or manual logic
-            // Simple logic: If it's "Period 1", increment day (except first one)
-            // But here we rely on the original array order.
-            
-            // To make it simple: We map the template to days.
-            // Assumption: The template provided in the image had consecutive days.
-            // If we encounter "Period 1" and it's not the first item, we assume it's a new day.
-            
             if (item.periodLabel.includes('الأولى') && index > 0) {
                 currentDayIndex++;
             }
@@ -223,7 +226,6 @@ export const ExamManagement: React.FC = () => {
           return;
       }
 
-      // Parse Logic
       const headers = rows[0].map(h => String(h).trim());
       const getIndex = (keywords: string[]) => headers.findIndex(h => keywords.some(k => h.includes(k)));
 
@@ -262,9 +264,7 @@ export const ExamManagement: React.FC = () => {
 
         const comm = tempMap.get(cNo)!;
         const gradeRaw = idxGrade > -1 ? String(row[idxGrade] || '') : '';
-        const gradeNormalized = normalizeGrade(gradeRaw);
         
-        // Store original grade string but use normalized for logic if needed
         if (gradeRaw && !comm.grades.includes(gradeRaw)) comm.grades.push(gradeRaw);
 
         const seat = idxSeat > -1 ? String(row[idxSeat] || '') : `S-${cNo}-${rowIndex}`;
@@ -275,11 +275,11 @@ export const ExamManagement: React.FC = () => {
             name: sName,
             image: `https://ui-avatars.com/api/?name=${sName}&background=random`,
             stage: idxStage > -1 ? String(row[idxStage] || '') : '',
-            grade: gradeRaw, // Keep original e.g. "أول ثانوي"
+            grade: gradeRaw, 
             className: idxClass > -1 ? String(row[idxClass] || '') : '',
             seatNumber: seat,
             subject: 'عام',
-            parentPhone: phone // Store Phone Number
+            parentPhone: phone 
         });
       });
 
@@ -304,10 +304,9 @@ export const ExamManagement: React.FC = () => {
           if (grade.includes('أول') || grade.includes('اول') || grade.includes('1')) return 1;
           if (grade.includes('ثاني') || grade.includes('2')) return 2;
           if (grade.includes('ثالث') || grade.includes('3')) return 3;
-          return 99; // Others at the end
+          return 99; 
       };
 
-      // USE THE EDITED SCHEDULE CONFIG
       scheduleConfig.forEach((scheduleItem) => {
           const dateStr = scheduleItem.date;
 
@@ -372,7 +371,7 @@ export const ExamManagement: React.FC = () => {
   };
 
   const handleControlScan = async (committeeId: string) => {
-    if (committeeId === lastScannedId) return; // Prevent double scan
+    if (committeeId === lastScannedId) return; 
 
     setLastScannedId(committeeId);
     setScanResult(null);
@@ -382,7 +381,6 @@ export const ExamManagement: React.FC = () => {
         msg: result.message || (result.success ? "تم الاستلام بنجاح" : "حدث خطأ")
     });
     
-    // Reset after delay
     setTimeout(() => {
         setScanResult(null);
         setLastScannedId(null);
@@ -568,8 +566,9 @@ export const ExamManagement: React.FC = () => {
       {showScanner && (
          <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
             <div className="bg-gray-900 rounded-2xl w-full max-w-lg overflow-hidden relative shadow-2xl animate-scale-in border border-gray-700">
+               {/* FIX: Use handleCloseScanner instead of direct setShowScanner(false) */}
                <button 
-                 onClick={() => setShowScanner(false)} 
+                 onClick={handleCloseScanner} 
                  className="absolute top-4 right-4 bg-white/10 hover:bg-white/20 p-2 rounded-full text-white z-20 pointer-events-auto"
                >
                  <X size={20}/>
@@ -629,7 +628,7 @@ export const ExamManagement: React.FC = () => {
          </div>
       )}
 
-      {/* SCHEDULE WIZARD MODAL - FULLY EDITABLE */}
+      {/* SCHEDULE WIZARD MODAL */}
       {showWizard && (
           <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
               <div className="bg-white rounded-2xl w-full max-w-4xl overflow-hidden shadow-2xl animate-scale-in flex flex-col max-h-[90vh]">
