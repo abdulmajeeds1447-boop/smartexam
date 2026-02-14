@@ -29,6 +29,7 @@ export interface Student {
   seatNumber: string;  // e.g. "1001"
   subject: string;     // Subject specific to this student
   parentPhone?: string; // NEW: Contact number
+  committeeNumber?: string; // Important for linking
 }
 
 export interface AttendanceRecord {
@@ -68,4 +69,30 @@ export interface Notification {
   timestamp: number;
   read: boolean;
   relatedStudentId?: string; // NEW: Link to student for Counselor
+}
+
+// --- New Types for Dynamic Schedule (Matched with System 1) ---
+
+export interface SubjectDetail {
+  name: string;
+  startTime: string;
+  endTime: string;
+}
+
+export interface PeriodAssignment {
+  periodId: number;
+  main: string[]; 
+  reserves: string[];
+  subjects?: Record<string, SubjectDetail>; // تفاصيل المواد
+}
+
+export interface DaySchedule {
+  dayId: number;
+  date: string;
+  periods: PeriodAssignment[];
+}
+
+export interface ExamSchedule {
+  days: DaySchedule[];
+  teachersPerCommittee: number; 
 }
