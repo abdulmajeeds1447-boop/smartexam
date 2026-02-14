@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
-import { Camera, ScanLine, AlertTriangle, ShieldAlert } from 'lucide-react';
+import { ScanLine, AlertTriangle, ShieldAlert } from 'lucide-react';
 import { Html5Qrcode } from 'html5-qrcode';
 
 interface ScannerProps {
@@ -8,17 +8,46 @@ interface ScannerProps {
 }
 
 export const Scanner: React.FC<ScannerProps> = ({ onScanSuccess }) => {
-  const { exams, processCommitteeScan, currentUser } = useApp();
+  const { processCommitteeScan, currentUser } = useApp();
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isSecure, setIsSecure] = useState(true);
-  
-  // Available committees for manual simulation
-  const availableCommittees = Array.from<string>(new Set(
-      exams.map(e => e.committeeNumber)
-  )).sort();
 
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const isScanningRef = useRef(false);
+
+  // Helper to start scanner
+  const startScanner = async () => {
+    if (isScanningRef.current) return;
+
+    try {
+        // Clear previous instance if any
+        if (scannerRef.current) {
+            await scannerRef.current.clear();
+        }
+
+        const html5QrCode = new Html5Qrcode("reader");
+        scannerRef.current = html5QrCode;
+
+        await html5QrCode.start(
+            { facingMode: "environment" },
+            {
+                fps: 10,
+                qrbox: { width: 250, height: 250 },
+                aspectRatio: 1.0
+            },
+            (decodedText) => {
+                handleScan(decodedText);
+            },
+            (errorMessage) => {
+                // ignore frame errors
+            }
+        );
+        isScanningRef.current = true;
+    } catch (err) {
+        console.error("Error starting scanner", err);
+        setErrorMsg("فشل تشغيل الكاميرا. تأكد من منح الصلاحيات.");
+    }
+  };
 
   useEffect(() => {
     // 1. Check for Secure Context (HTTPS or Localhost)
@@ -28,34 +57,6 @@ export const Scanner: React.FC<ScannerProps> = ({ onScanSuccess }) => {
     }
 
     // 2. Initialize Scanner
-    const startScanner = async () => {
-        if (isScanningRef.current) return;
-
-        try {
-            const html5QrCode = new Html5Qrcode("reader");
-            scannerRef.current = html5QrCode;
-
-            await html5QrCode.start(
-                { facingMode: "environment" },
-                {
-                    fps: 10,
-                    qrbox: { width: 250, height: 250 },
-                    aspectRatio: 1.0
-                },
-                (decodedText) => {
-                    handleScan(decodedText);
-                },
-                (errorMessage) => {
-                    // ignore frame errors
-                }
-            );
-            isScanningRef.current = true;
-        } catch (err) {
-            console.error("Error starting scanner", err);
-            setErrorMsg("فشل تشغيل الكاميرا. تأكد من منح الصلاحيات.");
-        }
-    };
-
     // Delay start slightly to ensure DOM is ready
     const timer = setTimeout(startScanner, 500);
 
@@ -74,7 +75,6 @@ export const Scanner: React.FC<ScannerProps> = ({ onScanSuccess }) => {
     // Avoid multiple scans in short time
     if (!currentUser) return;
 
-    // Pause scanner temporarily if needed, but usually we just process
     // Parse JSON if needed
     let committeeId = data;
     try {
@@ -86,9 +86,6 @@ export const Scanner: React.FC<ScannerProps> = ({ onScanSuccess }) => {
         // Raw string
     }
 
-    // If we have a modal or something, we might want to stop scanning. 
-    // Here we just try to process.
-    
     // Stop scanning on success to prevent loop
     if (scannerRef.current && isScanningRef.current) {
          await scannerRef.current.stop();
@@ -100,25 +97,16 @@ export const Scanner: React.FC<ScannerProps> = ({ onScanSuccess }) => {
     if (result.success) {
         onScanSuccess();
     } else {
-        setErrorMsg(result.message || 'خطأ في المسح');
+        setErrorMsg(result.message || 'خطأ في المسح أو اللجنة غير متاحة الآن');
+        
         // Restart scanner after 3 seconds if failed
         setTimeout(() => {
              setErrorMsg(null);
              if (scannerRef.current && !isScanningRef.current) {
-                 scannerRef.current.start(
-                    { facingMode: "environment" },
-                    { fps: 10, qrbox: { width: 250, height: 250 } },
-                    (txt) => handleScan(txt),
-                    () => {}
-                 ).then(() => { isScanningRef.current = true; });
+                 startScanner();
              }
         }, 3000);
     }
-  };
-
-  const handleSimulatedScan = async (committeeId: string) => {
-    if (!currentUser) return;
-    handleScan(JSON.stringify({ type: 'committee', id: committeeId }));
   };
 
   if (!isSecure) {
@@ -137,23 +125,7 @@ export const Scanner: React.FC<ScannerProps> = ({ onScanSuccess }) => {
                   <ul className="list-disc ml-5 mt-1 text-gray-700">
                       <li>Use <b>https://</b> if available.</li>
                       <li>Use <b>localhost</b> for testing.</li>
-                      <li>Or use the manual buttons below.</li>
                   </ul>
-              </div>
-              
-              <div className="mt-8 w-full max-w-sm">
-                   <p className="text-sm font-bold text-gray-500 mb-2">الاختيار اليدوي (بديل للكاميرا)</p>
-                   <div className="grid grid-cols-2 gap-2">
-                    {availableCommittees.map(committeeNum => (
-                        <button
-                            key={committeeNum}
-                            onClick={() => handleSimulatedScan(committeeNum)}
-                            className="bg-white border border-gray-300 text-gray-700 py-3 rounded-lg text-sm font-bold hover:bg-gray-50 flex items-center justify-center gap-2"
-                        >
-                            لجنة {committeeNum}
-                        </button>
-                    ))}
-                   </div>
               </div>
           </div>
       )
@@ -182,7 +154,7 @@ export const Scanner: React.FC<ScannerProps> = ({ onScanSuccess }) => {
             
             {errorMsg ? (
                  <div className="absolute -bottom-24 left-1/2 transform -translate-x-1/2 w-72 pointer-events-auto">
-                    <div className="bg-red-500 text-white px-4 py-3 rounded-lg text-sm flex items-center gap-2 justify-center shadow-lg animate-fade-in">
+                    <div className="bg-red-500 text-white px-4 py-3 rounded-lg text-sm flex items-center gap-2 justify-center shadow-lg animate-fade-in text-center">
                         <AlertTriangle size={20} className="shrink-0" />
                         <span>{errorMsg}</span>
                     </div>
@@ -196,28 +168,9 @@ export const Scanner: React.FC<ScannerProps> = ({ onScanSuccess }) => {
                 </div>
             )}
         </div>
-
-        {/* Manual Controls */}
-        <div className="w-full max-w-md bg-black/60 backdrop-blur-md rounded-xl p-4 border border-white/10 max-h-48 overflow-y-auto no-scrollbar pointer-events-auto">
-            <p className="text-white/60 text-xs text-center mb-3 uppercase tracking-wider">
-                للاختبار اليدوي (في حال تعطل الكاميرا)
-            </p>
-            <div className="grid grid-cols-2 gap-2">
-                {availableCommittees.length === 0 && (
-                    <div className="col-span-2 text-white/50 text-center text-xs">لا توجد لجان متاحة اليوم</div>
-                )}
-                {availableCommittees.map(committeeNum => (
-                    <button
-                        key={committeeNum}
-                        onClick={() => handleSimulatedScan(committeeNum)}
-                        className="bg-white/90 text-gray-900 py-2 rounded-lg text-sm font-bold hover:bg-white transition-colors flex items-center justify-center gap-2"
-                    >
-                        <span>لجنة {committeeNum}</span>
-                        <ScanLine size={14} className="opacity-50" />
-                    </button>
-                ))}
-            </div>
-        </div>
+        
+        {/* Placeholder for spacing at bottom since manual controls are removed */}
+        <div className="h-10"></div>
       </div>
     </div>
   );
