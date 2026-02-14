@@ -4,7 +4,7 @@ import { QRCodeCanvas } from 'qrcode.react';
 import { Printer, X, CheckCircle, MapPin, Calendar, Settings, Play, Info, Trash2, ScanLine, AlertTriangle, Database, RefreshCw, Clock } from 'lucide-react';
 import { EnvelopeStatus, ExamEnvelope, Student, AttendanceStatus, ExamSchedule, SubjectDetail } from '../../types';
 import { Html5Qrcode } from 'html5-qrcode';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, getDocs, collection } from 'firebase/firestore'; // تحديث الاستيراد
 import { db } from '../../firebase';
 
 export const ExamManagement: React.FC = () => {
@@ -21,15 +21,15 @@ export const ExamManagement: React.FC = () => {
   // Data States
   const [cloudSchedule, setCloudSchedule] = useState<ExamSchedule | null>(null);
   const [cloudCommittees, setCloudCommittees] = useState<Record<string, Student[]>>({});
+  const [committeeLocations, setCommitteeLocations] = useState<Record<string, string>>({}); // تخزين المواقع
 
   const scannerRef = useRef<Html5Qrcode | null>(null);
 
-  // --- 1. Prepare Students Data (Group by Committee) ---
+  // --- 1. تجميع الطلاب حسب اللجان ---
   useEffect(() => {
     if (students.length > 0) {
         const groups: Record<string, Student[]> = {};
         students.forEach(s => {
-            // Use the committee number synced from System 1
             const commNum = s.committeeNumber || 'General';
             if (!groups[commNum]) groups[commNum] = [];
             groups[commNum].push(s);
@@ -38,7 +38,7 @@ export const ExamManagement: React.FC = () => {
     }
   }, [students]);
 
-  // --- 2. Group Exams for Display ---
+  // --- 2. تجميع المظاريف الحالية للعرض ---
   const examsByCommittee = useMemo(() => {
       const groups: Record<string, ExamEnvelope[]> = {};
       exams.forEach(exam => {
@@ -48,7 +48,6 @@ export const ExamManagement: React.FC = () => {
       return groups;
   }, [exams]);
 
-  // List of committees pending delivery
   const pendingDeliveryCommittees = useMemo(() => {
       const today = new Date().toISOString().split('T')[0];
       const pending = exams.filter(e => 
@@ -58,7 +57,7 @@ export const ExamManagement: React.FC = () => {
       return Array.from(new Set(pending)).sort();
   }, [exams]);
 
-  // --- 3. Scanner Logic ---
+  // --- 3. منطق الماسح الضوئي ---
   useEffect(() => {
     if (showScanner) {
         const initScanner = async () => {
@@ -106,16 +105,33 @@ export const ExamManagement: React.FC = () => {
       }
   };
 
-  // --- 4. Fetch Schedule from Firebase ---
-  const fetchCloudSchedule = async () => {
+  // --- 4. جلب الجدول + تفاصيل اللجان من السحابة ---
+  const fetchCloudData = async () => {
       try {
-          const docRef = doc(db, 'system_config', 'exam_schedule');
-          const snap = await getDoc(docRef);
-          if (snap.exists()) {
-              setCloudSchedule(snap.data() as ExamSchedule);
+          // أ. جلب الجدول
+          const scheduleDocRef = doc(db, 'system_config', 'exam_schedule');
+          const scheduleSnap = await getDoc(scheduleDocRef);
+          
+          if (scheduleSnap.exists()) {
+              setCloudSchedule(scheduleSnap.data() as ExamSchedule);
+              
+              // ب. جلب تفاصيل اللجان (المواقع)
+              // نبحث في مجموعة system_config عن المستندات التي تبدأ بـ committee_
+              const configSnapshot = await getDocs(collection(db, 'system_config'));
+              const locations: Record<string, string> = {};
+              
+              configSnapshot.forEach(doc => {
+                  const data = doc.data();
+                  // تحقق هل هذا مستند لجنة؟ (إما عن طريق الاسم أو الحقول)
+                  if (doc.id.startsWith('committee_') && data.committeeNumber && data.location) {
+                      locations[data.committeeNumber] = data.location;
+                  }
+              });
+              setCommitteeLocations(locations);
+
               setShowWizard(true);
           } else {
-              alert("لم يتم العثور على جدول! يرجى التأكد من 'حفظ الجدول' ثم 'تصدير' من النظام الأول.");
+              alert("لم يتم العثور على جدول في النظام! يرجى التأكد من ضغط زر 'تصدير للنظام الذكي' في النظام الأول.");
           }
       } catch (error) {
           console.error(error);
@@ -123,7 +139,7 @@ export const ExamManagement: React.FC = () => {
       }
   };
 
-  // --- 5. Generate Exams Logic (The Core) ---
+  // --- 5. المحرك الذكي: توليد المظاريف ---
   const handleGenerate = () => {
       if (!cloudSchedule) return;
 
@@ -131,22 +147,22 @@ export const ExamManagement: React.FC = () => {
       const committeeKeys = Object.keys(cloudCommittees).filter(k => k !== 'General' && k !== 'احتياط');
 
       if (committeeKeys.length === 0) {
-          alert("لا توجد لجان موزعة (لا يوجد طلاب مرتبطين بلجان). تأكد من استيراد الطلاب في النظام الأول.");
+          alert("لا توجد لجان موزعة (لا يوجد طلاب مرتبطين بلجان). تأكد من استيراد الطلاب وتوزيعهم في النظام الأول.");
           return;
       }
 
-      // Loop Days
+      // 1. المرور على كل يوم
       cloudSchedule.days.forEach((daySchedule) => {
           const dateStr = daySchedule.date;
 
-          // Loop Periods
+          // 2. المرور على كل فترة
           daySchedule.periods.forEach((period) => {
               
-              // Loop Committees
+              // 3. المرور على كل لجنة وإنشاء مظروف لها إن وجد اختبار
               committeeKeys.forEach(commNum => {
                   const commStudents = cloudCommittees[commNum];
                   
-                  // Analyze subjects for this committee in this period
+                  // تحليل المواد
                   const relevantSubjects: string[] = [];
                   const affectedStudents: Student[] = [];
                   const gradesInCommittee: string[] = [];
@@ -155,9 +171,7 @@ export const ExamManagement: React.FC = () => {
                   let latestEnd = "00:00";
 
                   commStudents.forEach(student => {
-                      const studentStage = student.grade; // Matches Stage Name in Sys 1
-                      
-                      // Check if this stage has a subject in this period
+                      const studentStage = student.grade; 
                       const subjectDetail: SubjectDetail | undefined = period.subjects?.[studentStage];
 
                       if (subjectDetail && subjectDetail.name) {
@@ -175,7 +189,6 @@ export const ExamManagement: React.FC = () => {
                   });
 
                   if (affectedStudents.length > 0) {
-                      // Create display subject name
                       const subjectDisplay = gradesInCommittee.map(g => {
                           const sub = period.subjects?.[g];
                           return sub ? `${sub.name}` : '';
@@ -183,12 +196,15 @@ export const ExamManagement: React.FC = () => {
 
                       const examId = `EX-${commNum}-${dateStr}-P${period.periodId}`;
                       
+                      // استخدام الموقع الحقيقي من السحابة أو الافتراضي
+                      const realLocation = committeeLocations[commNum] || `مقر ${commNum}`;
+
                       newExams.push({
                           id: examId,
                           subject: subjectDisplay, 
                           grades: gradesInCommittee,
                           committeeNumber: commNum,
-                          location: `مقر ${commNum}`, // Can be enhanced if location stored in firebase
+                          location: realLocation, // <--- هنا التعديل المهم
                           date: dateStr,
                           startTime: earliestStart === "23:59" ? "07:30" : earliestStart,
                           endTime: latestEnd === "00:00" ? "10:00" : latestEnd,
@@ -208,9 +224,9 @@ export const ExamManagement: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6">
-      {/* Top Action Bar */}
-      <div className="flex flex-col md:flex-row justify-between items-center bg-white p-6 rounded-xl shadow-sm border border-gray-100 gap-4">
+    <div className="space-y-6 animate-fade-in">
+      {/* Header */}
+      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col md:flex-row justify-between items-center gap-4">
         <div>
           <h2 className="text-2xl font-bold text-gray-800">إدارة الاختبارات</h2>
           <p className="text-gray-500">
@@ -218,7 +234,7 @@ export const ExamManagement: React.FC = () => {
           </p>
         </div>
         
-        <div className="flex gap-2 flex-wrap">
+        <div className="flex gap-2">
              <button 
                 onClick={() => setShowScanner(true)}
                 className="bg-purple-600 text-white border border-purple-600 px-4 py-3 rounded-lg hover:bg-purple-700 flex items-center gap-2 shadow-lg shadow-purple-200"
@@ -236,8 +252,8 @@ export const ExamManagement: React.FC = () => {
             </button>
 
             <button 
-                onClick={fetchCloudSchedule}
-                className="bg-secondary hover:bg-secondary/90 text-white px-6 py-3 rounded-lg shadow transition-colors font-bold flex items-center gap-2"
+                onClick={fetchCloudData}
+                className="bg-secondary hover:bg-secondary/90 text-white px-6 py-3 rounded-lg shadow-lg transition-colors font-bold flex items-center gap-2"
             >
                 <Database size={20} />
                 جلب الجدول وتوليد المظاريف
@@ -251,16 +267,16 @@ export const ExamManagement: React.FC = () => {
                 <RefreshCw size={40} className="text-gray-400" />
             </div>
             <h3 className="text-xl font-bold text-gray-700">الجدول فارغ</h3>
-            <p className="text-gray-500 mt-2">اضغط على زر "جلب الجدول وتوليد المظاريف" لجلب الخطة المعتمدة من النظام الرئيسي.</p>
+            <p className="text-gray-500 mt-2">اضغط على زر "جلب الجدول وتوليد المظاريف" لاستيراد الخطة من النظام الأول.</p>
         </div>
       ) : (
           <div className="space-y-8">
             {Object.entries(examsByCommittee).map(([committeeNum, committeeExams]: [string, ExamEnvelope[]]) => {
                 const firstExam = committeeExams[0];
+                const allGrades = unique(committeeExams.reduce((acc, e) => [...acc, ...e.grades], [] as string[]));
                 
                 return (
                     <div key={committeeNum} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                        {/* Committee Header */}
                         <div className="bg-gray-50 p-4 border-b border-gray-200 flex flex-col md:flex-row justify-between items-center gap-4">
                             <div className="flex items-center gap-4">
                                 <div className="bg-primary-600 text-white p-3 rounded-lg shadow-sm">
@@ -273,7 +289,7 @@ export const ExamManagement: React.FC = () => {
                                         {firstExam.location}
                                     </div>
                                     <div className="text-sm text-gray-500">
-                                        {firstExam.grades.join(' • ')}
+                                        {allGrades.join(' • ')}
                                     </div>
                                 </div>
                             </div>
@@ -282,7 +298,7 @@ export const ExamManagement: React.FC = () => {
                                 onClick={() => setSelectedCommittee({
                                     number: committeeNum, 
                                     location: firstExam.location,
-                                    grades: firstExam.grades
+                                    grades: allGrades
                                 })}
                                 className="bg-black text-white px-6 py-2 rounded-lg hover:bg-gray-800 transition-colors flex items-center gap-2 shadow-lg"
                             >
@@ -291,7 +307,6 @@ export const ExamManagement: React.FC = () => {
                             </button>
                         </div>
 
-                        {/* Exams Grid */}
                         <div className="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 bg-gray-50/50">
                             {committeeExams.sort((a,b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime)).map(exam => (
                                 <div key={exam.id} className="bg-white p-4 rounded-lg border border-gray-100 shadow-sm flex flex-col relative hover:shadow-md transition-all">
@@ -301,7 +316,7 @@ export const ExamManagement: React.FC = () => {
                                     }`}></div>
                                     
                                     <div className="flex justify-between items-start mb-2 pl-3">
-                                        <div className="text-xs font-bold text-gray-500 flex items-center gap-1">
+                                        <span className="text-xs font-bold text-gray-500 flex items-center gap-1">
                                             <Calendar size={12}/> {exam.date}
                                         </div>
                                         <span className={`text-[10px] px-2 py-0.5 rounded-full ${
@@ -352,13 +367,12 @@ export const ExamManagement: React.FC = () => {
                <div className="p-8 flex flex-col items-center relative h-[450px]">
                    <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2 z-10"><ScanLine className="text-purple-400" /> ماسح استلام المظاريف</h3>
                    <div className="absolute inset-0 z-0 bg-black flex items-center justify-center"><div id="admin-reader" className="w-full h-full"></div></div>
-                   {/* Results & Simulation UI similar to previous code */}
                </div>
             </div>
          </div>
       )}
 
-      {/* CONFIRMATION WIZARD (Fetched Schedule Preview) */}
+      {/* CONFIRMATION WIZARD */}
       {showWizard && cloudSchedule && (
           <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
               <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl animate-scale-in">
@@ -373,6 +387,7 @@ export const ExamManagement: React.FC = () => {
                               <li>عدد الأيام: {cloudSchedule.days.length}</li>
                               <li>عدد الطلاب الجاهزون: {students.length}</li>
                               <li>عدد اللجان: {Object.keys(cloudCommittees).length}</li>
+                              <li>عدد المقرات المعرفة: {Object.keys(committeeLocations).length}</li>
                           </ul>
                       </div>
                       <p className="text-gray-600 text-sm">سيقوم النظام بدمج الطلاب مع موادهم وأوقاتهم وإنشاء المظاريف الرقمية.</p>
@@ -415,6 +430,7 @@ export const ExamManagement: React.FC = () => {
                   <div className="p-8 text-center space-y-4">
                       <div className="bg-red-50 p-4 rounded-full w-16 h-16 flex items-center justify-center mx-auto text-red-600 mb-2"><Trash2 size={32} /></div>
                       <h4 className="font-bold text-gray-900 text-lg">هل أنت متأكد؟</h4>
+                      <p className="text-gray-600">سيؤدي هذا الإجراء إلى حذف جميع المظاريف الحالية.</p>
                       <div className="flex gap-3 mt-6">
                           <button onClick={() => setShowDeleteAllModal(false)} className="flex-1 bg-gray-100 text-gray-700 py-3 rounded-xl font-bold">إلغاء</button>
                           <button onClick={() => { clearAllExams(); setShowDeleteAllModal(false); }} className="flex-1 bg-red-600 text-white py-3 rounded-xl font-bold">نعم، مسح الكل</button>
