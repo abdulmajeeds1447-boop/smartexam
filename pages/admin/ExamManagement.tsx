@@ -4,7 +4,7 @@ import { QRCodeCanvas } from 'qrcode.react';
 import { 
   Printer, X, CheckCircle, MapPin, 
   Play, Trash2, ScanLine, 
-  Database, Loader2, Clock, AlertCircle, UserCheck, Search
+  Database, Loader2, Clock, AlertCircle, UserCheck, Search, ArrowRightLeft, Package
 } from 'lucide-react';
 import { EnvelopeStatus, ExamEnvelope, Student, AttendanceStatus } from '../../types';
 import { doc, getDoc, getDocs, collection } from 'firebase/firestore'; 
@@ -13,26 +13,24 @@ import { db } from '../../firebase';
 export const ExamManagement: React.FC = () => {
   const { exams, students, importExams, clearAllExams, processAdminDeliveryScan } = useApp();
   
-  // UI States
+  // States
   const [selectedCommittee, setSelectedCommittee] = useState<any | null>(null);
   const [showWizard, setShowWizard] = useState(false);
-  const [showScanner, setShowScanner] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isFetching, setIsFetching] = useState(false);
   const [filterMode, setFilterMode] = useState<'TODAY' | 'ALL'>('TODAY');
   const [searchTerm, setSearchTerm] = useState('');
   
-  // Cloud Data Storage
+  // Cloud Data
   const [cloudSchedule, setCloudSchedule] = useState<any | null>(null);
   const [cloudCommitteesConfig, setCloudCommitteesConfig] = useState<Record<string, any>>({});
 
-  // 1. تجميع وتصفية البيانات
+  // تجميع البيانات
   const examsByCommittee = useMemo(() => {
       const today = new Date().toISOString().split('T')[0];
-      
       const filteredExams = exams.filter(e => {
           const matchesDate = filterMode === 'ALL' ? true : e.date === today;
-          const matchesSearch = searchTerm ? e.committeeNumber.includes(searchTerm) || e.location.includes(searchTerm) : true;
+          const matchesSearch = searchTerm ? (e.committeeNumber.includes(searchTerm) || e.location.includes(searchTerm)) : true;
           return matchesDate && matchesSearch;
       });
 
@@ -44,24 +42,33 @@ export const ExamManagement: React.FC = () => {
       return groups;
   }, [exams, filterMode, searchTerm]);
 
-  // --- العمليات ---
+  // إحصائيات سريعة للكنترول
+  const stats = useMemo(() => {
+      const todayExams = exams.filter(e => e.date === new Date().toISOString().split('T')[0]);
+      return {
+          total: todayExams.length,
+          pending: todayExams.filter(e => e.status === EnvelopeStatus.PENDING).length,
+          active: todayExams.filter(e => e.status === EnvelopeStatus.RECEIVED).length,
+          completed: todayExams.filter(e => e.status === EnvelopeStatus.COMPLETED).length,
+          delivered: todayExams.filter(e => e.status === EnvelopeStatus.DELIVERED).length,
+      };
+  }, [exams]);
 
+  // --- العمليات ---
   const fetchCloudData = async () => {
       setIsFetching(true);
       try {
-          // جلب الجدول المعتمد
+          // 1. جلب الجدول
           const scheduleSnap = await getDoc(doc(db, 'system_config', 'exam_schedule'));
           if (!scheduleSnap.exists()) throw new Error("لم يتم العثور على جدول في السحابة. تأكد من الرفع من النظام الأول.");
           setCloudSchedule(scheduleSnap.data());
 
-          // جلب إعدادات اللجان (المقر + السعة + المراقبين)
+          // 2. جلب إعدادات اللجان
           const configSnapshot = await getDocs(collection(db, 'system_config'));
           const configs: Record<string, any> = {};
           configSnapshot.forEach(docSnap => {
               const d = docSnap.data();
-              if (d.type === 'committee_meta') {
-                  configs[d.committeeNumber] = d;
-              }
+              if (d.type === 'committee_meta') configs[d.committeeNumber] = d;
           });
           setCloudCommitteesConfig(configs);
           setShowWizard(true);
@@ -74,11 +81,9 @@ export const ExamManagement: React.FC = () => {
 
   const handleGenerateFromCloud = () => {
       if (!cloudSchedule) return;
-
       const newExams: ExamEnvelope[] = [];
       const studentsMap: Record<string, Student[]> = {};
 
-      // توزيع الطلاب الموجودين في النظام على لجانهم
       students.forEach(s => {
           const cNum = s.committeeNumber || 'General';
           if (!studentsMap[cNum]) studentsMap[cNum] = [];
@@ -87,42 +92,31 @@ export const ExamManagement: React.FC = () => {
 
       cloudSchedule.days.forEach((day: any) => {
           day.periods.forEach((period: any) => {
-              
-              // المرور على اللجان التي بها طلاب
               Object.keys(studentsMap).forEach(commNum => {
                   const commStudents = studentsMap[commNum];
                   const commConfig = cloudCommitteesConfig[commNum];
-                  
                   const affectedStudents: Student[] = [];
                   const gradesInEnvelope: string[] = [];
                   const subjectsInEnvelope: string[] = [];
-                  let startTime = "07:30";
-                  let endTime = "10:00";
+                  let startTime = "07:30"; let endTime = "10:00";
 
-                  // البحث عن مادة لكل طالب في هذه الفترة
                   commStudents.forEach(student => {
-                      // مطابقة ذكية لاسم المرحلة
-                      const stageKey = Object.keys(period.subjects || {}).find(k => 
-                          student.grade.includes(k) || k.includes(student.grade.split(' ')[0])
-                      );
-
+                      const stageKey = Object.keys(period.subjects || {}).find(k => student.grade.includes(k));
                       if (stageKey && period.subjects[stageKey]) {
                           const subj = period.subjects[stageKey];
                           affectedStudents.push({ ...student, subject: subj.name });
-                          
                           if (!gradesInEnvelope.includes(student.grade)) gradesInEnvelope.push(student.grade);
                           if (!subjectsInEnvelope.includes(subj.name)) subjectsInEnvelope.push(subj.name);
-                          
-                          startTime = subj.startTime;
-                          endTime = subj.endTime;
+                          startTime = subj.startTime; endTime = subj.endTime;
                       }
                   });
 
                   if (affectedStudents.length > 0) {
-                      // محاولة جلب اسم المراقب من الجدول (إن وجد)
-                      // نفترض أن period.main تحتوي أسماء المراقبين مرتبة
+                      // تحديد المراقب المتوقع
                       const commIndex = parseInt(commNum) - 1;
-                      const assignedTeacherName = period.main && period.main[commIndex] ? period.main[commIndex] : undefined;
+                      
+                      // ✅ التصحيح هنا: استخدام OR null لمنع undefined
+                      const assignedTeacherName = (period.main && period.main[commIndex]) || null;
 
                       newExams.push({
                           id: `EX-${commNum}-${day.date}-P${period.periodId}`,
@@ -131,19 +125,17 @@ export const ExamManagement: React.FC = () => {
                           committeeNumber: commNum,
                           location: commConfig?.location || `مقر ${commNum}`,
                           date: day.date,
-                          startTime,
-                          endTime,
+                          startTime, endTime,
                           period: period.periodId === 1 ? 'الفترة الأولى' : 'الفترة الثانية',
                           status: EnvelopeStatus.PENDING,
                           students: affectedStudents,
                           attendance: affectedStudents.map(s => ({ studentId: s.id, status: AttendanceStatus.PRESENT })),
-                          teacherId: assignedTeacherName // حفظ اسم المراقب المتوقع
+                          teacherId: assignedTeacherName // الآن القيمة إما اسم أو null
                       });
                   }
               });
           });
       });
-
       importExams(newExams);
       setShowWizard(false);
       alert(`✅ تم إنشاء ${newExams.length} مظروف اختبار بنجاح!`);
@@ -152,57 +144,59 @@ export const ExamManagement: React.FC = () => {
   return (
     <div className="space-y-6 animate-fade-in pb-20">
       
-      {/* لوحة التحكم العلوية */}
-      <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col lg:flex-row justify-between items-center gap-6">
-        <div>
-          <h2 className="text-2xl font-black text-gray-800 flex items-center gap-2">
-              <Database className="text-blue-600" /> غرفة عمليات الكنترول
-          </h2>
-          <p className="text-gray-500 text-sm mt-1 font-medium">
-             مراقبة اللجان، تسليم المظاريف، ومتابعة سير الاختبارات
-          </p>
-        </div>
-        
-        <div className="flex flex-wrap gap-3 justify-end items-center">
-             
-             {/* البحث */}
-             <div className="relative group">
-                 <input 
-                    type="text" 
-                    placeholder="بحث عن لجنة..." 
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none w-40 transition-all"
-                 />
-                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
-             </div>
-
-             {/* الفلتر */}
-             <div className="bg-gray-100 p-1 rounded-xl flex items-center">
-                 <button onClick={() => setFilterMode('TODAY')} className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${filterMode === 'TODAY' ? 'bg-white shadow text-blue-600' : 'text-gray-500'}`}>اليوم</button>
-                 <button onClick={() => setFilterMode('ALL')} className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${filterMode === 'ALL' ? 'bg-white shadow text-blue-600' : 'text-gray-500'}`}>الجدول كامل</button>
-             </div>
-
-            <div className="h-8 w-px bg-gray-200 mx-1"></div>
-
-            <button onClick={fetchCloudData} disabled={isFetching} className={`text-white px-5 py-2.5 rounded-xl shadow-lg transition-all font-bold flex items-center gap-2 text-sm ${isFetching ? 'bg-gray-400 cursor-wait' : 'bg-slate-800 hover:bg-slate-900'}`}>
-                {isFetching ? <Loader2 size={18} className="animate-spin" /> : <Database size={18} />}
-                <span>جلب الجدول وتوليد المظاريف</span>
-            </button>
+      {/* 1. Control Dashboard Header */}
+      <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
+        <div className="flex flex-col lg:flex-row justify-between items-center gap-6 mb-6">
+            <div>
+                <h2 className="text-2xl font-black text-slate-800 flex items-center gap-3">
+                    <div className="bg-slate-900 text-white p-2 rounded-xl"><Database size={24} /></div>
+                    غرفة عمليات الكنترول
+                </h2>
+                <p className="text-gray-500 text-sm mt-2 font-medium mr-14">
+                    إدارة دورة حياة الاختبارات من التسليم حتى الاستلام
+                </p>
+            </div>
             
-            <button onClick={() => setShowDeleteModal(true)} className="bg-red-50 text-red-500 p-2.5 rounded-xl hover:bg-red-100 transition-colors border border-red-100" title="تصفير النظام">
-                <Trash2 size={20} />
-            </button>
+            <div className="flex gap-2">
+                <button onClick={fetchCloudData} disabled={isFetching} className={`bg-slate-900 text-white px-6 py-3 rounded-xl hover:bg-slate-800 shadow-lg transition-all font-bold flex items-center gap-2 ${isFetching ? 'opacity-70 cursor-wait' : ''}`}>
+                    {isFetching ? <Loader2 size={20} className="animate-spin" /> : <Play size={20} />}
+                    <span>{isFetching ? 'جاري الاتصال...' : 'جلب الجدول وتوليد المظاريف'}</span>
+                </button>
+                <button onClick={() => setShowDeleteModal(true)} className="bg-red-50 text-red-500 p-3 rounded-xl hover:bg-red-100 border border-red-100" title="تصفير النظام"><Trash2 size={20} /></button>
+            </div>
+        </div>
+
+        {/* Status Bar */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-4 border-t border-gray-100">
+            <div className="bg-blue-50 p-4 rounded-2xl flex items-center gap-4">
+                <div className="bg-blue-200 text-blue-700 p-2 rounded-lg"><Package size={20} /></div>
+                <div><h4 className="text-2xl font-black text-blue-900">{stats.total}</h4><span className="text-xs text-blue-600 font-bold">مظروف اليوم</span></div>
+            </div>
+            <div className="bg-yellow-50 p-4 rounded-2xl flex items-center gap-4">
+                <div className="bg-yellow-200 text-yellow-700 p-2 rounded-lg"><Clock size={20} /></div>
+                <div><h4 className="text-2xl font-black text-yellow-900">{stats.active}</h4><span className="text-xs text-yellow-600 font-bold">جاري الاختبار</span></div>
+            </div>
+            <div className="bg-green-50 p-4 rounded-2xl flex items-center gap-4">
+                <div className="bg-green-200 text-green-700 p-2 rounded-lg"><CheckCircle size={20} /></div>
+                <div><h4 className="text-2xl font-black text-green-900">{stats.delivered}</h4><span className="text-xs text-green-600 font-bold">تم الاستلام</span></div>
+            </div>
+            <div className="flex items-center justify-between bg-gray-50 px-4 rounded-2xl border border-gray-200">
+                <span className="text-xs font-bold text-gray-500">عرض:</span>
+                <div className="flex bg-white rounded-lg p-1 shadow-sm">
+                    <button onClick={() => setFilterMode('TODAY')} className={`px-3 py-1 rounded-md text-xs font-bold transition-all ${filterMode === 'TODAY' ? 'bg-slate-800 text-white' : 'text-gray-500'}`}>اليوم</button>
+                    <button onClick={() => setFilterMode('ALL')} className={`px-3 py-1 rounded-md text-xs font-bold transition-all ${filterMode === 'ALL' ? 'bg-slate-800 text-white' : 'text-gray-500'}`}>الكل</button>
+                </div>
+            </div>
         </div>
       </div>
 
-      {/* شبكة اللجان */}
+      {/* 2. Grid Display */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
         {Object.keys(examsByCommittee).length === 0 && (
-            <div className="col-span-full py-20 text-center text-gray-400 bg-white rounded-3xl border-2 border-dashed border-gray-200">
+            <div className="col-span-full py-24 text-center text-gray-400 bg-white rounded-3xl border-2 border-dashed border-gray-200">
                 <AlertCircle className="w-16 h-16 mx-auto mb-4 opacity-20" />
-                <p className="font-bold text-lg">لا توجد بيانات للعرض</p>
-                <p className="text-sm">تأكد من ضغط زر "جلب الجدول" أو تغيير الفلتر لعرض الكل</p>
+                <p className="font-bold text-lg">لا توجد مظاريف مطابقة</p>
+                <p className="text-sm">تأكد من توليد الجدول أو تغيير الفلتر</p>
             </div>
         )}
 
@@ -214,82 +208,81 @@ export const ExamManagement: React.FC = () => {
             const allGrades = Array.from(new Set(committeeExams.flatMap(e => e.grades)));
             
             return (
-                <div key={committeeNum} className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden hover:shadow-md transition-all">
+                <div key={committeeNum} className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden hover:shadow-lg transition-all group">
                     
-                    {/* رأس اللجنة */}
-                    <div className="bg-gray-50 p-4 border-b border-gray-100 flex justify-between items-center">
-                        <div className="flex items-center gap-3">
-                            <div className="w-12 h-12 bg-slate-800 text-white rounded-xl flex items-center justify-center font-black text-xl shadow-sm">
+                    {/* Card Header */}
+                    <div className="bg-slate-50 p-5 border-b border-gray-100 flex justify-between items-start">
+                        <div className="flex gap-4">
+                            <div className="bg-white w-14 h-14 rounded-2xl flex flex-col items-center justify-center font-black text-2xl text-slate-800 shadow-sm border border-gray-200">
                                 {committeeNum}
+                                <span className="text-[8px] font-normal text-gray-400 -mt-1">لجنة</span>
                             </div>
                             <div>
-                                <div className="font-bold text-gray-800 text-sm flex items-center gap-1">
-                                    <MapPin size={14} className="text-red-500"/>
+                                <div className="font-bold text-slate-800 flex items-center gap-1.5">
+                                    <MapPin size={16} className="text-red-500"/>
                                     {firstExam.location}
                                 </div>
-                                <div className="flex gap-1 mt-1 flex-wrap">
-                                    {allGrades.map(g => <span key={g} className="text-[10px] bg-white border px-1.5 rounded text-gray-500">{g}</span>)}
+                                <div className="flex gap-1 mt-2 flex-wrap">
+                                    {allGrades.map(g => <span key={g} className="text-[10px] bg-white border border-gray-200 px-2 py-0.5 rounded-md text-gray-500 font-medium">{g}</span>)}
                                 </div>
                             </div>
                         </div>
-                        <button 
-                            onClick={() => setSelectedCommittee({number: committeeNum, location: firstExam.location})}
-                            className="text-gray-400 hover:text-black p-2 bg-white rounded-lg border border-gray-200 hover:border-black transition-all"
-                            title="طباعة ملصق اللجنة"
-                        >
-                            <Printer size={18} />
-                        </button>
+                        <button onClick={() => setSelectedCommittee({number: committeeNum, location: firstExam.location})} className="text-gray-400 hover:text-slate-800 bg-white p-2 rounded-xl shadow-sm"><Printer size={18} /></button>
                     </div>
 
-                    {/* قائمة الاختبارات داخل اللجنة */}
-                    <div className="p-3 space-y-3">
+                    {/* Exams List */}
+                    <div className="p-4 space-y-3">
                         {committeeExams.map(exam => {
                             const isDone = exam.status === EnvelopeStatus.COMPLETED || exam.status === EnvelopeStatus.DELIVERED;
                             
                             return (
-                                <div key={exam.id} className={`p-3 rounded-xl border relative overflow-hidden group ${isDone ? 'bg-green-50/50 border-green-100' : 'bg-white border-gray-100'}`}>
-                                    <div className="flex justify-between items-start mb-2">
+                                <div key={exam.id} className={`p-4 rounded-2xl border relative overflow-hidden transition-all ${isDone ? 'bg-green-50/50 border-green-100' : 'bg-white border-gray-100'}`}>
+                                    <div className="flex justify-between items-start mb-3">
                                         <div>
-                                            <h4 className="font-bold text-gray-800 text-sm">{exam.subject}</h4>
-                                            <div className="flex items-center gap-2 text-xs text-gray-500 mt-1">
-                                                <span className="bg-gray-100 px-1.5 rounded font-mono">{exam.startTime}</span>
-                                                <span className="text-gray-400">|</span>
-                                                <span>{exam.period}</span>
+                                            <h4 className="font-bold text-gray-900 text-sm">{exam.subject}</h4>
+                                            <div className="flex items-center gap-2 text-xs text-gray-500 mt-1 font-mono">
+                                                <Clock size={12} className="text-orange-500" />
+                                                {exam.startTime} - {exam.endTime}
                                             </div>
-                                            {/* عرض اسم المراقب المسند */}
                                             {exam.teacherId && (
-                                                <div className="flex items-center gap-1 text-[10px] text-blue-600 mt-2 font-bold bg-blue-50 px-2 py-1 rounded w-fit">
+                                                <div className="flex items-center gap-1.5 text-[10px] text-blue-700 mt-2 font-bold bg-blue-50 px-2 py-1 rounded-lg w-fit border border-blue-100">
                                                     <UserCheck size={12} />
                                                     {exam.teacherId}
                                                 </div>
                                             )}
                                         </div>
                                         
-                                        <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${
-                                            exam.status === EnvelopeStatus.PENDING ? 'bg-yellow-100 text-yellow-700' :
-                                            exam.status === EnvelopeStatus.RECEIVED ? 'bg-blue-100 text-blue-700 animate-pulse' :
-                                            exam.status === EnvelopeStatus.COMPLETED ? 'bg-purple-100 text-purple-700' :
-                                            'bg-green-100 text-green-700'
+                                        {/* Status Badge */}
+                                        <span className={`text-[10px] font-bold px-2.5 py-1 rounded-lg ${
+                                            exam.status === EnvelopeStatus.PENDING ? 'bg-yellow-50 text-yellow-700 border border-yellow-100' :
+                                            exam.status === EnvelopeStatus.RECEIVED ? 'bg-blue-50 text-blue-700 border border-blue-100 animate-pulse' :
+                                            exam.status === EnvelopeStatus.COMPLETED ? 'bg-purple-50 text-purple-700 border border-purple-100' :
+                                            'bg-green-50 text-green-700 border border-green-100'
                                         }`}>
                                             {exam.status === EnvelopeStatus.PENDING ? 'انتظار' :
                                              exam.status === EnvelopeStatus.RECEIVED ? 'جاري...' :
-                                             exam.status === EnvelopeStatus.COMPLETED ? 'جاهز للتسليم' : 'تم الاستلام'}
+                                             exam.status === EnvelopeStatus.COMPLETED ? 'جاهز' : 'مستلم'}
                                         </span>
                                     </div>
 
-                                    {/* أزرار التحكم اليدوي (للتوثيق) */}
-                                    <div className="flex gap-2 mt-3 pt-2 border-t border-gray-100/50">
+                                    {/* Action Buttons (The Power Features) */}
+                                    <div className="border-t border-gray-100 pt-3 mt-2 flex gap-2">
                                         {exam.status === EnvelopeStatus.COMPLETED && (
                                             <button 
                                                 onClick={() => processAdminDeliveryScan(exam.committeeNumber)}
-                                                className="flex-1 bg-purple-600 text-white py-1.5 rounded-lg text-xs font-bold hover:bg-purple-700 flex items-center justify-center gap-1 shadow-sm transition-all active:scale-95"
+                                                className="w-full bg-slate-900 text-white py-2 rounded-xl text-xs font-bold hover:bg-slate-800 flex items-center justify-center gap-2 shadow-lg transition-transform active:scale-95"
                                             >
-                                                <CheckCircle size={12} /> استلام المظروف
+                                                <ArrowRightLeft size={14} /> استلام من المعلم
                                             </button>
                                         )}
                                         {exam.status === EnvelopeStatus.DELIVERED && (
-                                            <div className="flex-1 bg-green-100 text-green-700 py-1.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1">
-                                                <CheckCircle size={12} /> محفوظ بالكنترول
+                                            <div className="w-full bg-green-100 text-green-700 py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-2 border border-green-200">
+                                                <CheckCircle size={14} /> محفوظ في الكنترول
+                                            </div>
+                                        )}
+                                        {exam.status === EnvelopeStatus.RECEIVED && (
+                                            <div className="w-full text-center text-[10px] text-gray-400 py-1">
+                                                المعلم متواجد في اللجنة الآن
                                             </div>
                                         )}
                                     </div>
@@ -302,70 +295,69 @@ export const ExamManagement: React.FC = () => {
         })}
       </div>
 
-      {/* نافذة التأكيد (Wizard) */}
+      {/* Delete Confirmation */}
+       {showDeleteModal && (
+          <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+              <div className="bg-white rounded-3xl p-8 max-w-sm w-full text-center shadow-2xl">
+                  <div className="bg-red-50 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 text-red-500"><Trash2 size={40} /></div>
+                  <h3 className="text-2xl font-black text-slate-800 mb-2">تصفير النظام؟</h3>
+                  <p className="text-gray-500 text-sm mb-8 leading-relaxed">سيتم حذف جميع المظاريف والجدول الحالي. لن يتم حذف بيانات الطلاب أو المعلمين.</p>
+                  <div className="flex gap-3">
+                      <button onClick={() => setShowDeleteModal(false)} className="flex-1 bg-gray-100 py-3 rounded-2xl font-bold text-gray-600 hover:bg-gray-200">تراجع</button>
+                      <button onClick={() => { clearAllExams(); setShowDeleteModal(false); }} className="flex-1 bg-red-600 text-white py-3 rounded-2xl font-bold hover:bg-red-700 shadow-xl shadow-red-200">نعم، مسح</button>
+                  </div>
+              </div>
+          </div>
+      )}
+      
       {showWizard && (
           <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-              <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl animate-scale-in">
-                  <div className="bg-slate-900 p-6 text-white flex justify-between items-center rounded-t-2xl">
-                      <h3 className="font-bold text-xl flex items-center gap-2"><CheckCircle className="text-green-400" /> مراجعة البيانات المستوردة</h3>
-                      <button onClick={() => setShowWizard(false)} className="hover:bg-white/20 p-2 rounded-full"><X size={20}/></button>
+              <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl animate-scale-in overflow-hidden">
+                  <div className="bg-slate-900 p-8 text-white">
+                      <h3 className="font-bold text-2xl flex items-center gap-3"><Database className="text-green-400" /> تأكيد الاستيراد</h3>
+                      <p className="text-slate-400 text-sm mt-2">سيتم إنشاء المظاريف بناءً على البيانات التالية:</p>
                   </div>
                   <div className="p-8 space-y-6">
-                      <div className="bg-blue-50 p-5 rounded-xl text-sm text-blue-900 border border-blue-100 leading-relaxed">
-                          <p className="font-bold mb-3 text-lg">ملخص البيانات من النظام الأول:</p>
-                          <ul className="list-disc list-inside space-y-2 text-blue-800 font-medium">
-                              <li>عدد أيام الجدول: <b className="text-black">{cloudSchedule?.days.length}</b> أيام</li>
-                              <li>عدد الطلاب الجاهزون للتوزيع: <b className="text-black">{students.filter(s => s.committeeNumber).length}</b> طالب</li>
-                              <li>عدد اللجان المعتمدة: <b className="text-black">{Object.keys(cloudCommitteesConfig).length}</b> لجنة</li>
-                          </ul>
-                          <p className="mt-4 text-xs text-blue-600 bg-white p-2 rounded border border-blue-200">
-                              سيقوم النظام الآن بدمج هذه البيانات، وتوزيع الطلاب على المظاريف، وتعيين المراقبين آلياً حسب الجدول.
-                          </p>
+                      <div className="space-y-4">
+                          <div className="flex justify-between items-center p-4 bg-gray-50 rounded-2xl border border-gray-100">
+                              <span className="text-gray-500 font-bold text-sm">عدد الأيام</span>
+                              <span className="text-xl font-black text-slate-800">{cloudSchedule?.days.length}</span>
+                          </div>
+                          <div className="flex justify-between items-center p-4 bg-gray-50 rounded-2xl border border-gray-100">
+                              <span className="text-gray-500 font-bold text-sm">اللجان المعتمدة</span>
+                              <span className="text-xl font-black text-slate-800">{Object.keys(cloudCommitteesConfig).length}</span>
+                          </div>
                       </div>
-                      <button onClick={handleGenerateFromCloud} className="w-full bg-slate-900 text-white py-4 rounded-xl font-bold text-lg hover:bg-slate-800 shadow-xl flex items-center justify-center gap-2 active:scale-95 transition-all">
-                          <Play size={24} fill="currentColor"/> اعتماد وتوليد المظاريف
+                      <button onClick={handleGenerateFromCloud} className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold text-lg hover:bg-blue-700 shadow-xl shadow-blue-200 flex items-center justify-center gap-2 active:scale-95 transition-all">
+                          <Play size={24} fill="currentColor"/> تنفيذ واعتماد
                       </button>
                   </div>
               </div>
           </div>
       )}
-
-      {/* نافذة الطباعة (QR) */}
+      
       {selectedCommittee && (
         <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-sm overflow-hidden relative shadow-2xl">
+          <div className="bg-white rounded-3xl w-full max-w-sm overflow-hidden relative shadow-2xl">
             <button onClick={() => setSelectedCommittee(null)} className="absolute top-4 left-4 bg-gray-100 p-2 rounded-full hover:bg-gray-200"><X size={20} /></button>
-            <div className="p-8 flex flex-col items-center text-center">
-              <div className="text-6xl font-black text-slate-900 mb-4">{selectedCommittee.number}</div>
-              <div className="bg-gray-100 px-4 py-2 rounded-full font-bold text-gray-600 mb-6 flex items-center gap-2">
-                  <MapPin size={16} />
+            <div className="p-10 flex flex-col items-center text-center">
+              <span className="text-gray-400 font-bold text-xs uppercase tracking-widest mb-2">رقم اللجنة</span>
+              <div className="text-8xl font-black text-slate-900 mb-6">{selectedCommittee.number}</div>
+              <div className="bg-gray-100 px-6 py-3 rounded-2xl font-bold text-gray-600 mb-8 flex items-center gap-2 shadow-inner">
+                  <MapPin size={20} className="text-red-500" />
                   {selectedCommittee.location}
               </div>
-              <div className="border-4 border-black p-4 rounded-2xl mb-6 bg-white shadow-inner">
-                <QRCodeCanvas value={JSON.stringify({ type: 'committee', id: selectedCommittee.number })} size={220} level="H" />
+              <div className="border-8 border-slate-900 p-4 rounded-3xl mb-8 bg-white shadow-2xl">
+                <QRCodeCanvas value={JSON.stringify({ type: 'committee', id: selectedCommittee.number })} size={200} level="H" />
               </div>
-              <button onClick={() => window.print()} className="w-full bg-black text-white py-4 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-gray-800 transition-all">
-                <Printer size={20} /> طباعة الملصق
+              <button onClick={() => window.print()} className="w-full bg-slate-900 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-3 hover:bg-slate-800 transition-all shadow-xl">
+                <Printer size={24} /> طباعة الملصق
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* نافذة الحذف */}
-       {showDeleteModal && (
-          <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-              <div className="bg-white rounded-xl p-6 max-w-sm w-full text-center shadow-2xl">
-                  <div className="bg-red-50 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 text-red-500"><Trash2 size={32} /></div>
-                  <h3 className="text-xl font-bold mb-2">تصفير النظام؟</h3>
-                  <p className="text-gray-500 text-sm mb-6">سيتم حذف جميع المظاريف الحالية لإنشاء جدول جديد. لن يتم حذف بيانات الطلاب أو المعلمين.</p>
-                  <div className="flex gap-2">
-                      <button onClick={() => setShowDeleteModal(false)} className="flex-1 bg-gray-100 py-3 rounded-xl font-bold hover:bg-gray-200 text-gray-700">إلغاء</button>
-                      <button onClick={() => { clearAllExams(); setShowDeleteModal(false); }} className="flex-1 bg-red-600 text-white py-3 rounded-xl font-bold hover:bg-red-700 shadow-lg shadow-red-200">تصفير ومسح</button>
-                  </div>
-              </div>
-          </div>
-      )}
     </div>
   );
 };
