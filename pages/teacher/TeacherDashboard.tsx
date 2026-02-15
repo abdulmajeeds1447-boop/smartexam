@@ -2,8 +2,16 @@ import React, { useMemo, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { EnvelopeStatus, ExamEnvelope } from '../../types';
 import { QrCode, MapPin, Clock, ChevronLeft, Search, X, CheckCircle2 } from 'lucide-react';
-import { format, parseISO } from 'date-fns';
-import { ar } from 'date-fns/locale';
+
+// دالة تنسيق التاريخ بدون مكتبات خارجية (Native JS)
+const formatDateNative = (dateStr: string) => {
+  try {
+    const date = new Date(dateStr);
+    return new Intl.DateTimeFormat('ar-SA', { weekday: 'long', day: 'numeric', month: 'long' }).format(date);
+  } catch {
+    return dateStr;
+  }
+};
 
 // دالة تنظيف وتوحيد أسماء المراحل لمنع التكرار
 const uniqueGrades = (grades: string[]) => {
@@ -41,7 +49,7 @@ export const TeacherDashboard: React.FC = () => {
   };
 
   return (
-    <div className="bg-gray-50 min-h-screen pb-28 font-sans safe-area-inset-bottom">
+    <div className="bg-gray-50 min-h-screen pb-28 font-sans safe-area-inset-bottom" dir="rtl">
       
       {/* رأس التطبيق (Header) */}
       <div className="bg-slate-900 text-white pt-14 pb-10 px-6 rounded-b-[2.5rem] shadow-xl relative overflow-hidden">
@@ -80,7 +88,6 @@ export const TeacherDashboard: React.FC = () => {
         ) : (
             Object.entries(groupedExams).map(([committeeNum, committeeExams]) => {
             const firstExam = committeeExams[0];
-            // استخدام دالة التنظيف لمنع تكرار المراحل
             const allGrades = uniqueGrades(committeeExams.flatMap(e => e.grades));
             const activeCount = committeeExams.filter(e => e.status === EnvelopeStatus.RECEIVED).length;
             
@@ -139,10 +146,16 @@ export const TeacherDashboard: React.FC = () => {
                         <div className="flex-1">
                             <h3 className="font-bold text-gray-800 text-base mb-1">{exam.subject}</h3>
                             <div className="flex justify-between items-center text-xs text-gray-500 font-medium">
-                                <span className="bg-white px-2 py-1 rounded border border-gray-100">{format(parseISO(exam.date), 'EEEE', { locale: ar })}</span>
+                                <span className="bg-white px-2 py-1 rounded border border-gray-100">
+                                    {formatDateNative(exam.date)}
+                                </span>
                                 <span dir="ltr">{exam.startTime} - {exam.endTime}</span>
                             </div>
                         </div>
+                        {/* أيقونة الحالة */}
+                        {exam.status === EnvelopeStatus.COMPLETED && (
+                            <CheckCircle2 className="text-green-500 w-5 h-5" />
+                        )}
                     </div>
                 ))}
             </div>
