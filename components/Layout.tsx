@@ -40,8 +40,8 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentPag
     // 2. الكنترول (تمت إعادة القوائم المفقودة)
     if (userRole === Role.ADMIN || userRole === Role.CONTROL) {
       items.push({ id: 'exams', label: 'اللجان', icon: ClipboardList });
-      items.push({ id: 'teachers', label: 'المعلمين', icon: Users }); // عادت
-      items.push({ id: 'students', label: 'الطلاب', icon: GraduationCap }); // عادت
+      items.push({ id: 'teachers', label: 'المعلمين', icon: Users });
+      items.push({ id: 'students', label: 'الطلاب', icon: GraduationCap });
     }
 
     // 3. المرشد
@@ -69,7 +69,6 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentPag
     <div className="min-h-screen bg-gray-50 flex flex-col md:flex-row font-sans">
       
       {/* ================= DESKTOP SIDEBAR (للكمبيوتر فقط) ================= */}
-      {/* تظهر دائماً في الشاشات الكبيرة وتحتوي على كل شيء */}
       <aside className="hidden md:flex flex-col w-72 bg-slate-900 text-white min-h-screen fixed right-0 top-0 bottom-0 z-50 shadow-2xl transition-all">
         <div className="p-8 border-b border-slate-800">
           <h1 className="text-2xl font-bold flex items-center gap-3">
@@ -128,7 +127,6 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentPag
       </main>
 
       {/* ================= MOBILE BOTTOM NAVIGATION (للجوال فقط) ================= */}
-      {/* يظهر شريط سفلي مثل التطبيقات */}
       <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 pb-safe z-50 shadow-[0_-8px_30px_rgba(0,0,0,0.08)] rounded-t-[1.5rem]">
         <div className="flex justify-around items-center h-20 px-2">
           
@@ -167,16 +165,13 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentPag
       </div>
 
       {/* ================= MOBILE "MORE" MENU (قائمة منبثقة) ================= */}
-      {/* تظهر عند ضغط زر "المزيد" وتحتوي على باقي العناصر + الخروج */}
       {showMobileMenu && (
           <div className="fixed inset-0 z-[60] md:hidden flex items-end justify-center">
-              {/* Backdrop */}
               <div 
                 className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm transition-opacity animate-fade-in"
                 onClick={() => setShowMobileMenu(false)}
               ></div>
 
-              {/* Sheet */}
               <div className="bg-white w-full rounded-t-[2rem] p-6 relative z-10 animate-slide-up shadow-2xl max-h-[70vh] overflow-y-auto">
                   <div className="w-12 h-1.5 bg-gray-200 rounded-full mx-auto mb-6"></div>
                   
@@ -186,7 +181,6 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentPag
                   </div>
 
                   <div className="grid grid-cols-3 gap-4 mb-8">
-                      {/* العناصر المخفية من الشريط السفلي */}
                       {moreMobileItems.map((item) => (
                           <button 
                             key={item.id}
@@ -213,7 +207,6 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentPag
               </div>
           </div>
       )}
-
     </div>
   );
 };
