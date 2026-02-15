@@ -8,32 +8,40 @@ import { ExamManagement } from './pages/admin/ExamManagement';
 import { TeacherManagement } from './pages/admin/TeacherManagement';
 import { StudentManagement } from './pages/admin/StudentManagement';
 import { Reports } from './pages/admin/Reports';
-import { Scanner } from './pages/teacher/Scanner';
-import { ExamSession } from './pages/teacher/Session';
 import { CounselorDashboard } from './pages/counselor/CounselorDashboard';
+// استيراد لوحة تحكم المعلم الجديدة
+import { TeacherDashboard } from './pages/teacher/TeacherDashboard';
 
 const AppContent: React.FC = () => {
   const { userRole } = useApp();
   const [currentPage, setCurrentPage] = useState<string>('dashboard');
 
-  // Reset page when role changes
+  // إعادة توجيه الصفحة الافتراضية حسب الدور
   useEffect(() => {
     if (userRole === Role.MANAGER || userRole === Role.ADMIN) setCurrentPage('dashboard');
     if (userRole === Role.CONTROL) setCurrentPage('exams');
     if (userRole === Role.COUNSELOR) setCurrentPage('counselor_dashboard');
-    if (userRole === Role.TEACHER) setCurrentPage('scanner');
+    // المعلم لا يحتاج لتحديد صفحة هنا لأنه يملك واجهة واحدة ذكية
   }, [userRole]);
 
+  // 1. حالة عدم تسجيل الدخول
   if (!userRole) {
     return <Login />;
   }
 
-  const renderPage = () => {
+  // 2. حالة المعلم (تطبيق خاص مستقل عن التخطيط الإداري)
+  // هذا يضمن ظهور واجهة الموبايل (الماسح والقوائم) بملء الشاشة بدون Sidebar
+  if (userRole === Role.TEACHER) {
+      return <TeacherDashboard />;
+  }
+
+  // 3. باقي الأدوار الإدارية (داخل التخطيط القياسي Layout)
+  const renderAdminPage = () => {
     // MANAGER VIEW
     if (userRole === Role.MANAGER) {
          switch (currentPage) {
              case 'dashboard': return <AdminDashboard />;
-             case 'reports': return <Reports />; // Can view reports but maybe restricted
+             case 'reports': return <Reports />;
              default: return <AdminDashboard />;
          }
     }
@@ -68,21 +76,14 @@ const AppContent: React.FC = () => {
         case 'counselor_dashboard': return <CounselorDashboard />;
         default: return <AdminDashboard />;
       }
-    } 
-    
-    // TEACHER VIEW
-    else {
-      switch (currentPage) {
-        case 'scanner': return <Scanner onScanSuccess={() => setCurrentPage('session')} />;
-        case 'session': return <ExamSession />;
-        default: return <Scanner onScanSuccess={() => setCurrentPage('session')} />;
-      }
     }
+    
+    return <AdminDashboard />;
   };
 
   return (
     <Layout onNavigate={setCurrentPage} currentPage={currentPage}>
-      {renderPage()}
+      {renderAdminPage()}
     </Layout>
   );
 };
