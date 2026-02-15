@@ -1,7 +1,17 @@
 import React from 'react';
 import { useApp } from '../context/AppContext';
 import { Role } from '../types';
-import { LogOut, LayoutDashboard, QrCode, FileText, Bell, Users, GraduationCap, Printer, HeartHandshake, Settings } from 'lucide-react';
+import { 
+  LayoutDashboard, 
+  FileText, 
+  Users, 
+  LogOut, 
+  School,
+  ClipboardList,
+  HeartHandshake,
+  QrCode,
+  ScanLine
+} from 'lucide-react';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -10,184 +20,131 @@ interface LayoutProps {
 }
 
 export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentPage }) => {
-  const { userRole, setUserRole, notifications, currentUser } = useApp();
+  const { userRole, setUserRole, currentUser } = useApp();
 
-  const handleLogout = () => {
-    setUserRole(null);
-  };
+  // تحديد عناصر القائمة بناءً على الصلاحية
+  const getMenuItems = () => {
+    const items = [];
+    
+    // 1. المشرف العام / المدير
+    if (userRole === Role.ADMIN || userRole === Role.MANAGER) {
+      items.push({ id: 'dashboard', label: 'الرئيسية', icon: LayoutDashboard });
+      items.push({ id: 'reports', label: 'التقارير', icon: FileText });
+    }
 
-  const unreadCount = notifications.filter(n => !n.read).length;
-
-  const getRoleLabel = () => {
-      switch(userRole) {
-          case Role.MANAGER: return 'مدير المدرسة';
-          case Role.CONTROL: return 'مسؤول الكنترول';
-          case Role.COUNSELOR: return 'المرشد الطلابي';
-          case Role.TEACHER: return currentUser?.name || 'معلم';
-          default: return 'مدير النظام';
+    // 2. الكنترول
+    if (userRole === Role.ADMIN || userRole === Role.CONTROL) {
+      items.push({ id: 'exams', label: 'اللجان', icon: ClipboardList });
+      // في الجوال نختصر القوائم، في الكمبيوتر تظهر كلها
+      if (typeof window !== 'undefined' && window.innerWidth > 768) {
+          items.push({ id: 'teachers', label: 'المعلمين', icon: Users });
+          items.push({ id: 'students', label: 'الطلاب', icon: School });
       }
+    }
+
+    // 3. المرشد
+    if (userRole === Role.COUNSELOR || userRole === Role.ADMIN) {
+        items.push({ id: 'counselor_dashboard', label: 'الغياب', icon: HeartHandshake });
+    }
+
+    // 4. المعلم (في حال استخدم التخطيط العام)
+    if (userRole === Role.TEACHER) {
+        items.push({ id: 'scanner', label: 'مسح', icon: QrCode });
+        items.push({ id: 'session', label: 'اللجنة', icon: FileText });
+    }
+
+    return items;
   };
+
+  const menuItems = getMenuItems();
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
-      {/* Top Navigation - Hidden on Print */}
-      <header className="bg-white shadow-sm sticky top-0 z-50 print:hidden">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="bg-primary-600 text-white p-2 rounded-lg">
-              <QrCode size={24} />
-            </div>
-            <div>
-              <h1 className="text-xl font-bold text-gray-900 leading-tight">النظام الذكي</h1>
-              <p className="text-xs text-gray-500">إدارة الاختبارات</p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-4">
-            <button 
-                onClick={() => userRole === Role.COUNSELOR ? onNavigate('counselor_dashboard') : onNavigate('reports')}
-                className="relative p-2 text-gray-500 hover:text-gray-700 transition-colors"
-            >
-              <Bell size={24} />
-              {unreadCount > 0 && (
-                <span className="absolute top-1 right-1 h-3 w-3 bg-red-500 rounded-full border-2 border-white animate-pulse"></span>
-              )}
-            </button>
-            <div className="hidden md:flex items-center gap-2">
-              <div className="text-right">
-                  <div className="text-sm font-bold text-gray-800">{getRoleLabel()}</div>
-                  <div className="text-[10px] text-gray-500">{userRole}</div>
-              </div>
-              <img src={`https://ui-avatars.com/api/?name=${userRole}&background=random`} alt="User" className="h-8 w-8 rounded-full" />
-            </div>
-            <button 
-              onClick={handleLogout}
-              className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-              title="تسجيل خروج"
-            >
-              <LogOut size={20} />
-            </button>
-          </div>
+    <div className="min-h-screen bg-gray-50 flex flex-col md:flex-row">
+      
+      {/* 1. Desktop Sidebar (يظهر فقط في الشاشات الكبيرة) */}
+      <aside className="hidden md:flex flex-col w-72 bg-slate-900 text-white min-h-screen fixed right-0 top-0 bottom-0 z-50 shadow-2xl">
+        <div className="p-8 border-b border-slate-800">
+          <h1 className="text-2xl font-bold flex items-center gap-3">
+            <div className="bg-blue-600 p-2 rounded-lg"><School className="text-white w-6 h-6" /></div>
+            النظام الذكي
+          </h1>
+          <p className="text-sm text-slate-400 mt-4 pr-1">أهلاً، {currentUser?.name || 'المستخدم'}</p>
         </div>
-      </header>
-
-      {/* Main Content */}
-      <main className="flex-1 flex flex-col md:flex-row max-w-7xl mx-auto w-full p-4 gap-4 print:p-0 print:w-full print:max-w-none">
         
-        {/* Sidebar - Dynamically rendered based on Role */}
-        {userRole !== Role.TEACHER && (
-          <nav className="hidden md:flex flex-col w-64 bg-white rounded-xl shadow-sm p-4 h-fit sticky top-24 print:hidden shrink-0">
-            
-            {/* MANAGER MENU */}
-            {(userRole === Role.MANAGER || userRole === Role.ADMIN) && (
-                 <NavItem 
-                    icon={<LayoutDashboard />} 
-                    label="لوحة المتابعة" 
-                    active={currentPage === 'dashboard'} 
-                    onClick={() => onNavigate('dashboard')} 
-                />
-            )}
+        <nav className="flex-1 p-6 space-y-3">
+          {menuItems.map((item) => (
+            <button
+              key={item.id}
+              onClick={() => onNavigate(item.id)}
+              className={`w-full flex items-center gap-4 px-5 py-4 rounded-2xl transition-all duration-200 group ${
+                currentPage === item.id 
+                ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/50 translate-x-[-5px]' 
+                : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+              }`}
+            >
+              <item.icon size={22} className={currentPage === item.id ? 'animate-pulse' : ''} />
+              <span className="font-bold text-base">{item.label}</span>
+            </button>
+          ))}
+        </nav>
 
-            {/* CONTROL MENU */}
-            {(userRole === Role.CONTROL || userRole === Role.ADMIN || userRole === Role.MANAGER) && (
-                <>
-                    <NavItem 
-                        icon={<FileText />} 
-                        label="إدارة اللجان والمظاريف" 
-                        active={currentPage === 'exams'} 
-                        onClick={() => onNavigate('exams')} 
-                    />
-                    <NavItem 
-                        icon={<Printer />} 
-                        label="التقارير والسجلات" 
-                        active={currentPage === 'reports'} 
-                        onClick={() => onNavigate('reports')} 
-                    />
-                </>
-            )}
+        <div className="p-6 border-t border-slate-800">
+          <button 
+            onClick={() => setUserRole(null)}
+            className="w-full flex items-center gap-3 text-red-400 hover:bg-red-500/10 px-5 py-4 rounded-2xl transition-colors font-bold"
+          >
+            <LogOut size={20} />
+            <span>تسجيل الخروج</span>
+          </button>
+        </div>
+      </aside>
 
-            {/* COUNSELOR MENU */}
-            {(userRole === Role.COUNSELOR || userRole === Role.ADMIN) && (
-                <>
-                    <NavItem 
-                        icon={<HeartHandshake />} 
-                        label="متابعة الغياب" 
-                        active={currentPage === 'counselor_dashboard'} 
-                        onClick={() => onNavigate('counselor_dashboard')} 
-                    />
-                </>
-            )}
+      {/* 2. Main Content Area */}
+      <main className="flex-1 md:mr-72 pb-24 md:pb-0 transition-all duration-300">
+        
+        {/* Mobile Top Bar (عنوان الصفحة في الجوال) */}
+        <div className="md:hidden bg-white/80 backdrop-blur-md px-6 py-4 shadow-sm flex justify-between items-center sticky top-0 z-40 border-b border-gray-100">
+            <div>
+                <h2 className="font-black text-xl text-slate-800">{menuItems.find(i => i.id === currentPage)?.label || 'الرئيسية'}</h2>
+                <p className="text-xs text-slate-500 font-medium">{currentUser?.name}</p>
+            </div>
+            <button onClick={() => setUserRole(null)} className="bg-red-50 p-2 rounded-full text-red-500">
+                <LogOut size={18} />
+            </button>
+        </div>
 
-            {/* SHARED ADMIN/CONTROL SETTINGS */}
-            {(userRole === Role.ADMIN || userRole === Role.CONTROL) && (
-                <>
-                    <div className="my-2 border-t border-gray-100"></div>
-                    <NavItem 
-                        icon={<Users />} 
-                        label="إدارة المعلمين" 
-                        active={currentPage === 'teachers'} 
-                        onClick={() => onNavigate('teachers')} 
-                    />
-                    <NavItem 
-                        icon={<GraduationCap />} 
-                        label="سجل الطلاب العام" 
-                        active={currentPage === 'students'} 
-                        onClick={() => onNavigate('students')} 
-                    />
-                </>
-            )}
-
-            {/* MANAGER EXTRA */}
-            {(userRole === Role.MANAGER) && (
-                <NavItem 
-                    icon={<Bell />} 
-                    label="سجل التنبيهات" 
-                    active={currentPage === 'reports'} 
-                    onClick={() => onNavigate('reports')} 
-                />
-            )}
-
-          </nav>
-        )}
-
-        <div className="flex-1 min-w-0">
-          {children}
+        {/* Page Content */}
+        <div className="p-4 md:p-10 max-w-7xl mx-auto w-full">
+            {children}
         </div>
       </main>
 
-      {/* Mobile Bottom Nav (Teacher only) - Hidden on Print */}
-      {userRole === Role.TEACHER && (
-        <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] p-4 flex justify-around z-40 pb-safe print:hidden">
-           <button 
-             onClick={() => onNavigate('scanner')}
-             className={`flex flex-col items-center gap-1 ${currentPage === 'scanner' ? 'text-primary-600' : 'text-gray-400'}`}
-           >
-             <QrCode size={24} />
-             <span className="text-xs font-medium">مسح QR</span>
-           </button>
-           <button 
-             onClick={() => onNavigate('session')}
-             className={`flex flex-col items-center gap-1 ${currentPage === 'session' ? 'text-primary-600' : 'text-gray-400'}`}
-           >
-             <FileText size={24} />
-             <span className="text-xs font-medium">اللجنة الحالية</span>
-           </button>
+      {/* 3. Mobile Bottom Navigation (يظهر فقط في الجوال - لجميع الأدوار) */}
+      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 pb-safe z-50 shadow-[0_-10px_40px_-15px_rgba(0,0,0,0.1)] rounded-t-[1.5rem]">
+        <div className="flex justify-around items-center h-20 px-2">
+          {menuItems.slice(0, 5).map((item) => {
+            const isActive = currentPage === item.id;
+            return (
+                <button
+                key={item.id}
+                onClick={() => onNavigate(item.id)}
+                className={`flex flex-col items-center justify-center w-full h-full space-y-1.5 transition-all duration-300 relative ${
+                    isActive ? 'text-blue-600 -translate-y-1' : 'text-gray-400'
+                }`}
+                >
+                <div className={`p-2 rounded-xl transition-all duration-300 ${isActive ? 'bg-blue-50' : 'bg-transparent'}`}>
+                    <item.icon size={24} strokeWidth={isActive ? 2.5 : 2} />
+                </div>
+                <span className={`text-[10px] font-bold ${isActive ? 'opacity-100' : 'opacity-70'}`}>{item.label}</span>
+                
+                {/* Active Indicator Dot */}
+                {isActive && <div className="absolute -bottom-1 w-1 h-1 bg-blue-600 rounded-full"></div>}
+                </button>
+            );
+          })}
         </div>
-      )}
+      </div>
+
     </div>
   );
 };
-
-const NavItem: React.FC<{ icon: React.ReactNode, label: string, active: boolean, onClick: () => void }> = ({ icon, label, active, onClick }) => (
-  <button 
-    onClick={onClick}
-    className={`flex items-center gap-3 p-3 rounded-lg w-full transition-all mb-2 ${
-      active 
-      ? 'bg-primary-50 text-primary-700 font-bold shadow-sm' 
-      : 'text-gray-600 hover:bg-gray-50'
-    }`}
-  >
-    {icon}
-    <span>{label}</span>
-  </button>
-);
