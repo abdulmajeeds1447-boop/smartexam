@@ -1,9 +1,7 @@
 import React, { useRef, useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
-import { UploadCloud, Search, Trash2, Download, GraduationCap, X, Phone, RefreshCw, MapPin } from 'lucide-react';
+import { UploadCloud, Search, Trash2, Download, RefreshCw, Layers } from 'lucide-react';
 import { Student } from '../../types';
-import { collection, getDocs } from 'firebase/firestore';
-import { db } from '../../firebase';
 import * as XLSX from 'xlsx';
 
 export const StudentManagement: React.FC = () => {
@@ -11,131 +9,95 @@ export const StudentManagement: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [search, setSearch] = useState('');
   const [showDeleteAllModal, setShowDeleteAllModal] = useState(false);
-  const [isSyncing, setIsSyncing] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
 
-  // --- دالة المزامنة الجديدة من النظام الأول ---
-  const syncFromSystem1 = async () => {
-    setIsSyncing(true);
-    try {
-        console.log("Starting Sync...");
-        
-        // 1. جلب الطلاب (يفترض أن النظام الأول يرفعهم في مجموعة 'students' أو 'students_master')
-        // سنحاول البحث في المجموعة التي يستخدمها التطبيق حالياً
-        const studentsSnap = await getDocs(collection(db, 'students'));
-        
-        // إذا كانت فارغة، قد يكون النظام الأول يرفع لمكان آخر، لكن سنفترض التوافق
-        // أو نقوم بجلب التوزيعات من مجموعة 'committees' إذا كان النظام الأول يخزنها هناك
-        // للأمان: سنجلب من 'students' ونعتمد على الحقول الموجودة
-        
-        const fetchedStudents: Student[] = [];
-        
-        studentsSnap.forEach(doc => {
-            const data = doc.data();
-            // نأخذ الطالب فقط إذا كان لديه رقم لجنة (موزع)
-            // أو نجلب الجميع
-            if (data.name) {
-                fetchedStudents.push({
-                    id: doc.id,
-                    name: data.name,
-                    seatNumber: data.seatNumber || doc.id,
-                    grade: data.grade || 'عام',
-                    className: data.className || '',
-                    committeeNumber: data.committeeNumber || '', // الحقل الأهم
-                    parentPhone: data.parentPhone || '',
-                    image: data.image || `https://ui-avatars.com/api/?name=${data.name}&background=random`,
-                    ...data
-                } as Student);
-            }
-        });
-
-        if (fetchedStudents.length > 0) {
-            // تحديث الحالة المحلية
-            await importStudents(fetchedStudents);
-            alert(`تمت المزامنة بنجاح! تم تحميل ${fetchedStudents.length} طالب.`);
-        } else {
-            alert("لم يتم العثور على بيانات في السحابة. تأكد من ضغط 'تصدير' في النظام الأول.");
-        }
-
-    } catch (error) {
-        console.error("Sync Error:", error);
-        alert("حدث خطأ أثناء المزامنة مع قاعدة البيانات.");
-    } finally {
-        setIsSyncing(false);
-    }
-  };
-
-  // --- تصفية وتنظيم الطلاب ---
-  const filteredStudents = useMemo(() => {
-    return students.filter(s => 
-      s.name.includes(search) || 
-      s.seatNumber.includes(search) || 
-      s.committeeNumber?.includes(search)
-    ).sort((a, b) => {
-        // ترتيب حسب اللجنة أولاً ثم الصف
-        const commA = parseInt(a.committeeNumber || '999');
-        const commB = parseInt(b.committeeNumber || '999');
-        if (commA !== commB) return commA - commB;
-        return a.grade.localeCompare(b.grade);
-    });
-  }, [students, search]);
-
-  // --- دوال الاستيراد اليدوي (Excel) ---
+  // --- دوال الاستيراد الذكي (يقرأ جميع الصفحات) ---
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
+    setIsProcessing(true);
+
     const reader = new FileReader();
     reader.onload = (e) => {
-      const data = new Uint8Array(e.target?.result as ArrayBuffer);
-      const workbook = XLSX.read(data, { type: 'array' });
-      const sheetName = workbook.SheetNames[0];
-      const sheet = workbook.Sheets[sheetName];
-      const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
-
-      if (!rows || rows.length < 2) return;
-
-      const headers = rows[0].map(h => String(h).trim());
-      const getIndex = (keywords: string[]) => headers.findIndex(h => keywords.some(k => h.includes(k)));
-
-      const idxName = getIndex(['اسم الطالب', 'الاسم']);
-      const idxId = getIndex(['رقم الجلوس', 'رقم الهوية', 'الرقم']);
-      const idxGrade = getIndex(['الصف', 'المرحلة']);
-      const idxCommittee = getIndex(['اللجنة', 'رقم اللجنة']); // إضافة اللجنة
-      const idxPhone = getIndex(['جوال', 'هاتف']);
-
-      if (idxName === -1) {
-          alert("خطأ: لا يوجد عمود باسم الطالب في الملف");
-          return;
-      }
-
-      const newStudents: Student[] = [];
-      
-      rows.slice(1).forEach((row, index) => {
-          if(!row[idxName]) return;
+      try {
+          const data = new Uint8Array(e.target?.result as ArrayBuffer);
+          const workbook = XLSX.read(data, { type: 'array' });
           
-          const name = String(row[idxName]).trim();
-          const id = idxId > -1 ? String(row[idxId]).trim() : `S-${Date.now()}-${index}`;
-          const committee = idxCommittee > -1 ? String(row[idxCommittee]).trim() : '';
+          let allStudents: Student[] = [];
           
-          newStudents.push({
-              id: id,
-              name: name,
-              seatNumber: id,
-              grade: idxGrade > -1 ? String(row[idxGrade]).trim() : 'عام',
-              className: '',
-              committeeNumber: committee, // تخزين اللجنة
-              stage: 'الثانوية',
-              subject: 'عام',
-              image: `https://ui-avatars.com/api/?name=${name}&background=random`,
-              parentPhone: idxPhone > -1 ? String(row[idxPhone]).trim() : ''
+          // 🔄 التعديل الجوهري: المرور على جميع الصفحات (Sheets) وليس الأولى فقط
+          workbook.SheetNames.forEach(sheetName => {
+              const sheet = workbook.Sheets[sheetName];
+              const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
+
+              if (!rows || rows.length < 2) return;
+
+              // البحث عن فهارس الأعمدة في هذه الصفحة
+              const headers = rows[0].map(h => String(h).trim());
+              const getIndex = (keywords: string[]) => headers.findIndex(h => keywords.some(k => h.includes(k)));
+
+              // كلمات مفتاحية ذكية للتعرف على الأعمدة
+              const idxName = getIndex(['اسم الطالب', 'الاسم', 'Name']);
+              const idxId = getIndex(['رقم الجلوس', 'رقم الهوية', 'الرقم', 'Seat']);
+              const idxGrade = getIndex(['الصف', 'المرحلة', 'Grade']);
+              const idxCommittee = getIndex(['اللجنة', 'رقم اللجنة', 'Committee', 'مقر', 'رقم']); // أضفنا "رقم" و "مقر" لزيادة الدقة
+              const idxPhone = getIndex(['جوال', 'هاتف', 'ولي الأمر', 'Mobile']);
+
+              if (idxName === -1) return; // تخطي الصفحات التي لا تحتوي أسماء
+
+              rows.slice(1).forEach((row, index) => {
+                  if(!row[idxName]) return;
+                  
+                  const name = String(row[idxName]).trim();
+                  
+                  // استخراج رقم اللجنة (هام جداً للتوزيع)
+                  let committee = idxCommittee > -1 ? String(row[idxCommittee]).trim() : '';
+                  // تنظيف رقم اللجنة (إبقاء الأرقام فقط)
+                  committee = committee.replace(/[^\d]/g, ''); 
+
+                  // إذا لم نجد رقم جلوس، ننشئ واحداً مؤقتاً
+                  const id = idxId > -1 ? String(row[idxId]).trim() : `S-${Date.now()}-${Math.floor(Math.random() * 100000)}`;
+                  
+                  // تحديد الصف: إما من العمود أو من اسم الصفحة (Sheet Name)
+                  let grade = idxGrade > -1 ? String(row[idxGrade]).trim() : '';
+                  
+                  // تخمين الصف من اسم الصفحة إذا كان العمود فارغاً (مهم جداً للملفات المقسمة صفحات)
+                  if (!grade) {
+                      if (sheetName.includes('أول') || sheetName.includes('1')) grade = 'أول ثانوي';
+                      else if (sheetName.includes('ثاني') || sheetName.includes('2')) grade = 'ثاني ثانوي';
+                      else if (sheetName.includes('ثالث') || sheetName.includes('3')) grade = 'ثالث ثانوي';
+                      else grade = 'عام';
+                  }
+
+                  allStudents.push({
+                      id: id,
+                      name: name,
+                      seatNumber: id,
+                      grade: grade,
+                      className: '',
+                      committeeNumber: committee, // هذا الرقم هو الذي يوزع الطالب
+                      stage: 'الثانوية',
+                      subject: 'عام',
+                      image: `https://ui-avatars.com/api/?name=${name}&background=random`,
+                      parentPhone: idxPhone > -1 ? String(row[idxPhone]).trim() : ''
+                  });
+              });
           });
-      });
 
-      if (newStudents.length > 0) {
-        importStudents(newStudents);
-        alert(`تم استيراد ${newStudents.length} طالب.`);
+          if (allStudents.length > 0) {
+            importStudents(allStudents);
+            alert(`تم استيراد ${allStudents.length} طالب من ${workbook.SheetNames.length} صفحات (مراحل) بنجاح!`);
+          } else {
+            alert("لم يتم العثور على بيانات طلاب. تأكد من وجود عمود 'اسم الطالب' و 'اللجنة'.");
+          }
+      } catch (err) {
+          console.error(err);
+          alert("حدث خطأ أثناء قراءة الملف");
+      } finally {
+          setIsProcessing(false);
+          if(fileInputRef.current) fileInputRef.current.value = '';
       }
-      if(fileInputRef.current) fileInputRef.current.value = '';
     };
     reader.readAsArrayBuffer(file);
   };
@@ -151,6 +113,22 @@ export const StudentManagement: React.FC = () => {
     XLSX.writeFile(wb, "نموذج_الطلاب_واللجان.xlsx");
   };
 
+  // --- التصفية والعرض ---
+  const filteredStudents = useMemo(() => {
+    return students.filter(s => 
+      s.name.includes(search) || 
+      s.seatNumber.includes(search) || 
+      s.committeeNumber?.includes(search)
+    ).sort((a, b) => {
+        // ترتيب رقمي للجان
+        const commA = parseInt(a.committeeNumber || '999');
+        const commB = parseInt(b.committeeNumber || '999');
+        if (commA !== commB) return commA - commB;
+        // ثم ترتيب حسب الصف
+        return a.grade.localeCompare(b.grade);
+    });
+  }, [students, search]);
+
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Header & Actions */}
@@ -158,20 +136,11 @@ export const StudentManagement: React.FC = () => {
         <div>
           <h2 className="text-2xl font-bold text-gray-800">سجل الطلاب وتوزيع اللجان</h2>
           <p className="text-gray-500">
-             {students.length > 0 ? `تم تحميل ${students.length} طالب` : 'قم بالمزامنة لجلب التوزيع من النظام الأول'}
+             {students.length > 0 ? `تم تحميل ${students.length} طالب` : 'قم باستيراد ملف التوزيع من النظام الأول'}
           </p>
         </div>
         
         <div className="flex gap-2 flex-wrap">
-             <button 
-                onClick={syncFromSystem1}
-                disabled={isSyncing}
-                className="bg-blue-600 text-white px-6 py-3 rounded-lg shadow hover:bg-blue-700 transition-colors font-bold flex items-center gap-2"
-            >
-                <RefreshCw size={20} className={isSyncing ? "animate-spin" : ""} />
-                {isSyncing ? 'جاري المزامنة...' : 'مزامنة من النظام الأول'}
-            </button>
-
              <button 
                 onClick={() => setShowDeleteAllModal(true)}
                 className="bg-red-50 text-red-600 border border-red-100 px-4 py-3 rounded-lg hover:bg-red-100 flex items-center gap-2"
@@ -198,10 +167,10 @@ export const StudentManagement: React.FC = () => {
                 />
                 <label 
                     htmlFor="student-upload" 
-                    className="bg-white border border-gray-300 text-gray-700 px-4 py-3 rounded-lg hover:bg-gray-50 cursor-pointer flex items-center gap-2"
-                    title="رفع ملف إكسل يدوي"
+                    className={`bg-blue-600 text-white px-6 py-3 rounded-lg shadow hover:bg-blue-700 transition-colors font-bold flex items-center gap-2 cursor-pointer ${isProcessing ? 'opacity-70 cursor-wait' : ''}`}
                 >
-                    <UploadCloud size={20} />
+                    {isProcessing ? <RefreshCw className="animate-spin" size={20}/> : <UploadCloud size={20} />}
+                    {isProcessing ? 'جاري المعالجة...' : 'استيراد (يقرأ كل الصفحات)'}
                 </label>
             </div>
         </div>
@@ -223,11 +192,11 @@ export const StudentManagement: React.FC = () => {
       {students.length === 0 ? (
         <div className="bg-white rounded-xl border-2 border-dashed border-gray-300 p-16 text-center">
             <div className="bg-blue-50 p-6 rounded-full w-24 h-24 flex items-center justify-center mx-auto mb-6">
-                <RefreshCw size={40} className="text-blue-500" />
+                <Layers size={40} className="text-blue-500" />
             </div>
             <h3 className="text-xl font-bold text-gray-800">القائمة فارغة</h3>
             <p className="text-gray-500 mt-2 max-w-md mx-auto">
-                اضغط على زر <b>"مزامنة من النظام الأول"</b> في الأعلى لجلب أسماء الطلاب وتوزيع اللجان المعتمد.
+                اضغط على زر <b>"استيراد"</b> واختر ملف الإكسل. سيقوم النظام بدمج الطلاب من جميع صفحات الملف تلقائياً.
             </p>
         </div>
       ) : (
@@ -240,7 +209,6 @@ export const StudentManagement: React.FC = () => {
                             <th className="p-4 font-bold">الطالب</th>
                             <th className="p-4 font-bold">الصف الدراسي</th>
                             <th className="p-4 font-bold">رقم الجلوس</th>
-                            <th className="p-4 font-bold">ولي الأمر</th>
                             <th className="p-4 font-bold">تحكم</th>
                         </tr>
                     </thead>
@@ -249,11 +217,8 @@ export const StudentManagement: React.FC = () => {
                             <tr key={student.id} className="hover:bg-blue-50/30 transition-colors group">
                                 <td className="p-4">
                                     {student.committeeNumber ? (
-                                        <div className="flex items-center gap-2">
-                                            <div className="bg-blue-600 text-white w-8 h-8 rounded-lg flex items-center justify-center font-bold text-sm shadow-sm">
-                                                {student.committeeNumber}
-                                            </div>
-                                            {/* محاولة عرض اسم المقر إذا كان مخزناً، وإلا نكتفي بالرقم */}
+                                        <div className="bg-blue-600 text-white w-8 h-8 rounded-lg flex items-center justify-center font-bold text-sm shadow-sm">
+                                            {student.committeeNumber}
                                         </div>
                                     ) : (
                                         <span className="text-gray-400 text-xs italic">غير موزع</span>
@@ -261,7 +226,9 @@ export const StudentManagement: React.FC = () => {
                                 </td>
                                 <td className="p-4">
                                     <div className="flex items-center gap-3">
-                                        <img src={student.image} alt="" className="h-8 w-8 rounded-full bg-gray-200 object-cover" />
+                                        <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-xs font-bold text-gray-500">
+                                            {student.name.charAt(0)}
+                                        </div>
                                         <span className="font-bold text-gray-800">{student.name}</span>
                                     </div>
                                 </td>
@@ -275,7 +242,6 @@ export const StudentManagement: React.FC = () => {
                                     </span>
                                 </td>
                                 <td className="p-4 font-mono text-gray-600">{student.seatNumber}</td>
-                                <td className="p-4 text-gray-500 text-sm">{student.parentPhone || '-'}</td>
                                 <td className="p-4 opacity-0 group-hover:opacity-100 transition-opacity">
                                     <button 
                                         onClick={() => {
@@ -302,7 +268,7 @@ export const StudentManagement: React.FC = () => {
                       <Trash2 size={32} />
                   </div>
                   <h3 className="font-bold text-xl text-gray-900 mb-2">مسح جميع الطلاب؟</h3>
-                  <p className="text-gray-500 text-sm mb-6">سيتم حذف كل البيانات الحالية. يمكنك إعادة المزامنة لاحقاً.</p>
+                  <p className="text-gray-500 text-sm mb-6">سيتم حذف كل البيانات الحالية لإعادة الاستيراد بشكل نظيف.</p>
                   <div className="flex gap-2">
                       <button onClick={() => setShowDeleteAllModal(false)} className="flex-1 bg-gray-100 py-2 rounded-lg font-bold text-gray-700">إلغاء</button>
                       <button onClick={() => { clearAllStudents(); setShowDeleteAllModal(false); }} className="flex-1 bg-red-600 py-2 rounded-lg font-bold text-white">مسح الكل</button>
