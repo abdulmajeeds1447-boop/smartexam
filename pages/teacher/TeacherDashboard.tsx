@@ -1,13 +1,11 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
-import { AttendanceStatus, EnvelopeStatus } from '../../types';
+import { AttendanceStatus, EnvelopeStatus, Student } from '../../types';
 import { 
   QrCode, UserCheck, UserX, Search, Clock, 
   CheckCircle, AlertCircle, LogOut, ShieldCheck, 
-  Users, Send, Camera, Info
+  Users, Send, Camera, Info, Layers, RefreshCw
 } from 'lucide-react';
-// يتم استيراد قارئ الباركود إذا كان مثبتاً، أو نستخدم واجهة المحاكاة الاحترافية
-// import { Html5QrcodeScanner } from 'html5-qrcode'; 
 
 export const TeacherDashboard: React.FC = () => {
   const { 
@@ -15,50 +13,80 @@ export const TeacherDashboard: React.FC = () => {
     processCommitteeScan, markAttendance, submitEnvelope, setUserRole 
   } = useApp();
 
-  const [isScanning, setIsScanning] = useState(false);
+  const [isScanningMode, setIsScanningMode] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [filter, setFilter] = useState<'all' | 'present' | 'absent' | 'pending'>('all');
   const [showConfirmSubmit, setShowConfirmSubmit] = useState(false);
 
-  // 1. تحديد الاختبار المرتبط بهذا المعلم حالياً (بناءً على المسح)
+  // 1. الحصر الذكي: تحديد الاختبار المرتبط بهذا المعلم حالياً (بناءً على المسح فقط)
   const activeExam = useMemo(() => {
-    return exams.find(e => e.id === activeExamId || (e.teacherId === currentUser?.id && e.status === EnvelopeStatus.RECEIVED));
+    return exams.find(e => 
+      e.id === activeExamId || 
+      (e.teacherId === currentUser?.id && e.status === EnvelopeStatus.RECEIVED)
+    );
   }, [exams, activeExamId, currentUser]);
 
-  // تحديث المعرف النشط تلقائياً عند الدخول
+  // تحديث المعرف النشط تلقائياً عند التعرف عليه
   useEffect(() => {
     if (activeExam && activeExam.id !== activeExamId) {
         setActiveExamId(activeExam.id);
     }
   }, [activeExam, activeExamId, setActiveExamId]);
 
-  // 2. معالجة نتيجة المسح (فتح اللجنة من المظروف)
+  // 2. منطق الترتيب التصاعدي للمراحل (أول -> ثاني -> ثالث)
+  const sortedGroupedStudents = useMemo(() => {
+    if (!activeExam) return {};
+    
+    // تجميع الطلاب حسب المرحلة
+    const groups: { [key: string]: Student[] } = {};
+    activeExam.students.forEach(student => {
+      const key = student.grade;
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(student);
+    });
+
+    // ترتيب المجموعات بناءً على وزن المرحلة (أول ثانوي = 1، ثاني = 2، ثالث = 3)
+    const getWeight = (s: string) => {
+        if (s.includes('أول') || s.includes('اول') || s.includes('1')) return 1;
+        if (s.includes('ثاني') || s.includes('2')) return 2;
+        if (s.includes('ثالث') || s.includes('3')) return 3;
+        return 4;
+    };
+
+    const sortedKeys = Object.keys(groups).sort((a, b) => getWeight(a) - getWeight(b));
+    
+    const sortedGroups: { [key: string]: Student[] } = {};
+    sortedKeys.forEach(key => {
+        sortedGroups[key] = groups[key];
+    });
+
+    return sortedGroups;
+  }, [activeExam]);
+
+  // دالة معالجة المسح (تستخدم للمسح الأول أو إعادة المسح)
   const handleBarcodeScanned = async (committeeData: string) => {
     if (!currentUser) return;
     
-    // محاولة استخراج رقم اللجنة من النص الممسوح
     let committeeNum = committeeData;
     try {
         const parsed = JSON.parse(committeeData);
         if (parsed.type === 'committee') committeeNum = parsed.id;
     } catch (e) {
-        // إذا لم يكن JSON، نأخذ النص الخام (في حال كان الباركود مجرد رقم)
         committeeNum = committeeData.replace(/\D/g, ''); 
     }
 
     const result = await processCommitteeScan(committeeNum, currentUser.id);
     if (result.success) {
-        setIsScanning(false);
+        setIsScanningMode(false);
     } else {
         alert(result.message || "عذراً، هذا المظروف غير مجدول لك حالياً");
     }
   };
 
-  // 3. تصفية الطلاب للجنة المفتوحة فقط
-  const filteredStudents = useMemo(() => {
-    if (!activeExam) return [];
-    return activeExam.students.filter(student => {
-      const record = activeExam.attendance.find(a => a.studentId === student.id);
+  // تصفية الطلاب للجنة النشطة
+  const filteredStudentsByGroup = (students: Student[]) => {
+    return students.filter(student => {
+      const record = activeExam?.attendance.find(a => a.studentId === student.id);
       const matchesSearch = student.name.includes(searchTerm) || student.seatNumber.includes(searchTerm);
       
       if (filter === 'present') return matchesSearch && record?.status === AttendanceStatus.PRESENT;
@@ -66,9 +94,8 @@ export const TeacherDashboard: React.FC = () => {
       if (filter === 'pending') return matchesSearch && (!record || record.status === AttendanceStatus.UNKNOWN);
       return matchesSearch;
     });
-  }, [activeExam, searchTerm, filter]);
+  };
 
-  // إحصائيات اللجنة الحالية
   const stats = useMemo(() => {
     if (!activeExam) return { total: 0, present: 0, absent: 0 };
     const total = activeExam.students.length;
@@ -77,55 +104,41 @@ export const TeacherDashboard: React.FC = () => {
     return { total, present, absent };
   }, [activeExam]);
 
-  // --- واجهة رقم 1: حالة انتظار مسح المظروف ---
-  if (!activeExam) {
+  // --- واجهة رقم 1: حالة انتظار المسح أو إعادة المسح ---
+  if (!activeExam || isScanningMode) {
     return (
       <div className="min-h-screen bg-[#050b14] text-white flex flex-col items-center p-6 font-sans" dir="rtl">
-        {/* هيدر المعلم */}
         <header className="w-full max-w-md flex justify-between items-center mb-12 mt-4 bg-white/5 p-4 rounded-2xl border border-white/10 backdrop-blur-md">
             <div className="flex items-center gap-3">
                 <img src="https://up6.cc/2026/02/177116640037762.png" alt="شعار" className="h-10" />
-                <div className="h-8 w-px bg-white/20"></div>
                 <div className="text-right">
                     <p className="text-[10px] text-blue-400 font-bold">المعلم المراقب</p>
                     <h2 className="text-sm font-black truncate max-w-[150px]">{currentUser?.name}</h2>
                 </div>
             </div>
-            <button onClick={() => setUserRole(null)} className="p-2 text-red-400 hover:bg-red-400/10 rounded-full transition-all"><LogOut size={22}/></button>
+            {activeExam && (
+                 <button onClick={() => setIsScanningMode(false)} className="p-2 text-white/50 hover:text-white"><X size={20}/></button>
+            )}
         </header>
 
-        <div className="w-full max-w-md flex-1 flex flex-col justify-center gap-8">
-            <div className="text-center space-y-4">
-                <div className="w-24 h-24 bg-blue-600 rounded-[2rem] flex items-center justify-center mx-auto shadow-2xl shadow-blue-500/20 border-4 border-white/10 animate-pulse">
-                    <QrCode size={48} className="text-white" />
-                </div>
-                <h1 className="text-2xl font-black">فتح مظروف اللجنة</h1>
-                <p className="text-slate-400 font-medium px-8">قم بمسح الباركود الموجود على المظروف المسلم لك من الكنترول للبدء</p>
+        <div className="w-full max-w-md flex-1 flex flex-col justify-center gap-8 text-center">
+            <div className="w-24 h-24 bg-blue-600 rounded-[2rem] flex items-center justify-center mx-auto shadow-2xl animate-pulse">
+                <QrCode size={48} className="text-white" />
             </div>
+            <h1 className="text-2xl font-black">{isScanningMode ? "إعادة مسح المظروف" : "فتح مظروف اللجنة"}</h1>
+            <p className="text-slate-400">قم بمسح الباركود الموجود على المظروف المسلم لك للبدء</p>
 
-            <div className="space-y-4">
-                <button 
-                    onClick={() => {
-                        // هنا يتم استدعاء الكاميرا فعلياً
-                        const manualCode = prompt("أدخل رقم اللجنة الموجود على المظروف (للتجربة):");
-                        if(manualCode) handleBarcodeScanned(manualCode);
-                    }}
-                    className="w-full bg-blue-600 hover:bg-blue-700 text-white py-5 rounded-[1.5rem] font-black text-xl flex items-center justify-center gap-3 shadow-xl transition-all active:scale-95"
-                >
-                    <Camera size={28} />
-                    مسح كود المظروف
-                </button>
-                
-                <div className="bg-white/5 border border-white/10 p-4 rounded-2xl flex items-start gap-3">
-                    <Info className="text-blue-400 shrink-0" size={20} />
-                    <p className="text-xs text-slate-400 leading-relaxed">بمجرد المسح، سيقوم النظام بتسجيل وقت استلامك للمظروف وفتح قائمة تحضير الطلاب الخاصة بهذه اللجنة فقط.</p>
-                </div>
-            </div>
+            <button 
+                onClick={() => {
+                    const manualCode = prompt("أدخل رقم اللجنة الموجود على المظروف:");
+                    if(manualCode) handleBarcodeScanned(manualCode);
+                }}
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white py-5 rounded-[1.5rem] font-black text-xl flex items-center justify-center gap-3 shadow-xl transition-all active:scale-95"
+            >
+                <Camera size={28} />
+                مسح كود المظروف
+            </button>
         </div>
-
-        <footer className="mt-auto py-6 text-slate-500 text-[10px] font-bold uppercase tracking-[0.2em]">
-            ثانوية الأمير عبدالمجيد - جدة
-        </footer>
       </div>
     );
   }
@@ -133,13 +146,19 @@ export const TeacherDashboard: React.FC = () => {
   // --- واجهة رقم 2: حالة اللجنة النشطة (بعد المسح) ---
   return (
     <div className="min-h-screen bg-slate-50 pb-32 font-sans" dir="rtl">
-      {/* Header المظروف النشط */}
+      {/* Header المظروف النشط مع إمكانية المسح دائماً */}
       <div className="bg-[#050b14] text-white p-6 rounded-b-[2.5rem] shadow-2xl sticky top-0 z-30 border-b-4 border-blue-600">
         <div className="flex justify-between items-start mb-6">
             <div>
                 <div className="flex items-center gap-2 mb-2">
-                    <span className="bg-blue-600 text-white px-3 py-1 rounded-full text-[10px] font-black tracking-tighter uppercase">اللجنة نشطة</span>
-                    <span className="text-slate-400 text-[10px] font-bold">{activeExam.period}</span>
+                    <span className="bg-blue-600 text-white px-3 py-1 rounded-full text-[10px] font-black uppercase">اللجنة نشطة</span>
+                    {/* زر المسح المتاح دائماً */}
+                    <button 
+                        onClick={() => setIsScanningMode(true)}
+                        className="flex items-center gap-1 bg-white/10 px-2 py-1 rounded-lg text-[10px] font-bold text-blue-300 hover:bg-white/20 transition-all"
+                    >
+                        <RefreshCw size={12} /> تغيير اللجنة
+                    </button>
                 </div>
                 <h2 className="text-2xl font-black">{activeExam.subject}</h2>
                 <div className="flex items-center gap-2 text-blue-400 text-sm font-bold mt-1">
@@ -153,7 +172,6 @@ export const TeacherDashboard: React.FC = () => {
             </div>
         </div>
 
-        {/* Search Bar */}
         <div className="relative">
             <input 
                 type="text" 
@@ -174,53 +192,65 @@ export const TeacherDashboard: React.FC = () => {
           <FilterTab label="بانتظار" count={stats.total - (stats.present + stats.absent)} active={filter === 'pending'} onClick={() => setFilter('pending')} color="bg-slate-400" />
       </div>
 
-      {/* قائمة الطلاب الحصرية لهذه اللجنة */}
-      <div className="p-4 space-y-3">
-        {filteredStudents.length === 0 ? (
-            <div className="py-20 text-center text-slate-400 font-bold">لا يوجد نتائج تطابق البحث</div>
-        ) : (
-            filteredStudents.map(student => {
-                const record = activeExam.attendance.find(a => a.studentId === student.id);
-                const isPresent = record?.status === AttendanceStatus.PRESENT;
-                const isAbsent = record?.status === AttendanceStatus.ABSENT;
+      {/* قائمة الطلاب المرتبة تصاعدياً حسب المرحلة */}
+      <div className="p-4 space-y-8">
+        {Object.entries(sortedGroupedStudents).map(([gradeTitle, students]) => {
+            const displayStudents = filteredStudentsByGroup(students);
+            if (displayStudents.length === 0) return null;
 
-                return (
-                    <div key={student.id} className={`bg-white rounded-3xl p-5 shadow-sm border transition-all flex items-center justify-between ${isPresent ? 'border-green-100' : isAbsent ? 'border-red-100' : 'border-slate-100'}`}>
-                        <div className="flex items-center gap-4">
-                            <div className="relative">
-                                <div className="w-14 h-14 bg-slate-100 rounded-2xl flex items-center justify-center font-black text-slate-400 border border-slate-200 overflow-hidden">
-                                    {student.name.charAt(0)}
-                                </div>
-                                {isPresent && <div className="absolute -top-1 -right-1 bg-green-500 text-white rounded-full border-4 border-white p-1 shadow-lg"><CheckCircle size={12}/></div>}
-                                {isAbsent && <div className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full border-4 border-white p-1 shadow-lg"><AlertCircle size={12}/></div>}
-                            </div>
-                            <div>
-                                <h4 className="font-black text-slate-800 text-base">{student.name}</h4>
-                                <div className="flex gap-2 mt-1">
-                                    <span className="text-[10px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded-md font-bold">مقعد: {student.seatNumber}</span>
-                                    <span className="text-[10px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded-md font-bold">{student.grade}</span>
-                                </div>
-                            </div>
-                        </div>
+            return (
+                <div key={gradeTitle} className="space-y-3 animate-fade-in">
+                    <h3 className="font-black text-slate-800 flex items-center gap-2 border-r-4 border-blue-600 pr-3">
+                        <Layers size={18} className="text-blue-600" />
+                        {gradeTitle}
+                        <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">{students.length} طالب</span>
+                    </h3>
 
-                        <div className="flex gap-2">
-                            <button 
-                                onClick={() => markAttendance(activeExam.id, student.id, AttendanceStatus.PRESENT)}
-                                className={`p-3 rounded-2xl transition-all active:scale-90 ${isPresent ? 'bg-green-500 text-white shadow-lg shadow-green-200' : 'bg-slate-100 text-slate-400 hover:bg-green-50'}`}
-                            >
-                                <UserCheck size={24} />
-                            </button>
-                            <button 
-                                onClick={() => markAttendance(activeExam.id, student.id, AttendanceStatus.ABSENT)}
-                                className={`p-3 rounded-2xl transition-all active:scale-90 ${isAbsent ? 'bg-red-500 text-white shadow-lg shadow-red-200' : 'bg-slate-100 text-slate-400 hover:bg-red-50'}`}
-                            >
-                                <UserX size={24} />
-                            </button>
-                        </div>
+                    <div className="grid grid-cols-1 gap-3">
+                        {displayStudents.map(student => {
+                            const record = activeExam.attendance.find(a => a.studentId === student.id);
+                            const isPresent = record?.status === AttendanceStatus.PRESENT;
+                            const isAbsent = record?.status === AttendanceStatus.ABSENT;
+
+                            return (
+                                <div key={student.id} className={`bg-white rounded-3xl p-5 shadow-sm border transition-all flex items-center justify-between ${isPresent ? 'border-green-100 shadow-green-50' : isAbsent ? 'border-red-100 shadow-red-50' : 'border-slate-100'}`}>
+                                    <div className="flex items-center gap-4">
+                                        <div className="relative">
+                                            <div className="w-14 h-14 bg-slate-100 rounded-2xl flex items-center justify-center font-black text-slate-400 border border-slate-200 overflow-hidden">
+                                                {student.name.charAt(0)}
+                                            </div>
+                                            {isPresent && <div className="absolute -top-1 -right-1 bg-green-500 text-white rounded-full border-4 border-white p-1 shadow-lg"><CheckCircle size={12}/></div>}
+                                            {isAbsent && <div className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full border-4 border-white p-1 shadow-lg"><AlertCircle size={12}/></div>}
+                                        </div>
+                                        <div>
+                                            <h4 className="font-black text-slate-800 text-base">{student.name}</h4>
+                                            <div className="flex gap-2 mt-1">
+                                                <span className="text-[10px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded-md font-bold">مقعد: {student.seatNumber}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex gap-2">
+                                        <button 
+                                            onClick={() => markAttendance(activeExam.id, student.id, AttendanceStatus.PRESENT)}
+                                            className={`p-3 rounded-2xl transition-all active:scale-90 ${isPresent ? 'bg-green-500 text-white shadow-lg' : 'bg-slate-100 text-slate-400'}`}
+                                        >
+                                            <UserCheck size={24} />
+                                        </button>
+                                        <button 
+                                            onClick={() => markAttendance(activeExam.id, student.id, AttendanceStatus.ABSENT)}
+                                            className={`p-3 rounded-2xl transition-all active:scale-90 ${isAbsent ? 'bg-red-500 text-white shadow-lg' : 'bg-slate-100 text-slate-400'}`}
+                                        >
+                                            <UserX size={24} />
+                                        </button>
+                                    </div>
+                                </div>
+                            );
+                        })}
                     </div>
-                );
-            })
-        )}
+                </div>
+            );
+        })}
       </div>
 
       {/* شريط الإجراءات السفلي (إنهاء اللجنة) */}
@@ -238,20 +268,20 @@ export const TeacherDashboard: React.FC = () => {
       {showConfirmSubmit && (
           <div className="fixed inset-0 bg-[#050b14]/80 backdrop-blur-sm z-[60] flex items-center justify-center p-6">
               <div className="bg-white rounded-[2.5rem] w-full max-w-sm p-8 text-center animate-scale-in shadow-2xl border border-white/20">
-                  <div className="w-20 h-20 bg-blue-50 text-blue-600 rounded-3xl flex items-center justify-center mx-auto mb-6 rotate-3">
+                  <div className="w-20 h-20 bg-blue-50 text-blue-600 rounded-3xl flex items-center justify-center mx-auto mb-6">
                       <ShieldCheck size={40} />
                   </div>
                   <h3 className="text-2xl font-black text-slate-900 mb-2">إنهاء اللجنة؟</h3>
-                  <p className="text-slate-500 text-sm mb-8 leading-relaxed font-medium">سيتم إرسال محضر الغياب النهائي (عدد: {stats.absent}) للكنترول والمرشد الطلابي ولا يمكن التعديل بعد ذلك.</p>
+                  <p className="text-slate-500 text-sm mb-8">سيتم إرسال محضر الغياب النهائي (عدد: {stats.absent}) للكنترول والمرشد الطلابي.</p>
                   
                   <div className="flex gap-3">
-                      <button onClick={() => setShowConfirmSubmit(false)} className="flex-1 py-4 font-bold text-slate-400 hover:text-slate-600 transition-colors">تراجع</button>
+                      <button onClick={() => setShowConfirmSubmit(false)} className="flex-1 py-4 font-bold text-slate-400">تراجع</button>
                       <button 
                         onClick={() => {
                             submitEnvelope(activeExam.id);
                             setShowConfirmSubmit(false);
                         }}
-                        className="flex-1 bg-blue-600 text-white py-4 rounded-2xl font-black shadow-lg shadow-blue-200 active:scale-95 transition-all"
+                        className="flex-1 bg-blue-600 text-white py-4 rounded-2xl font-black shadow-lg"
                       >
                           اعتماد وتسليم
                       </button>
@@ -263,6 +293,7 @@ export const TeacherDashboard: React.FC = () => {
   );
 };
 
+// مكون تصفية القوائم
 const FilterTab = ({ label, count, active, onClick, color = "bg-blue-600" }: any) => (
     <button 
         onClick={onClick}
