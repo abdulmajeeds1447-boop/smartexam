@@ -1,31 +1,36 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { QRCodeCanvas } from 'qrcode.react';
-import { Printer, X, CheckCircle, MapPin, Calendar, Settings, Play, Info, Trash2, ScanLine, AlertTriangle, Database, RefreshCw, Clock } from 'lucide-react';
+import { 
+  Printer, X, CheckCircle, MapPin, Calendar, Play, 
+  Trash2, ScanLine, AlertTriangle, Database, RefreshCw, Clock, Loader2 
+} from 'lucide-react';
 import { EnvelopeStatus, ExamEnvelope, Student, AttendanceStatus, ExamSchedule, SubjectDetail } from '../../types';
 import { Html5Qrcode } from 'html5-qrcode';
-import { doc, getDoc, getDocs, collection } from 'firebase/firestore'; // تحديث الاستيراد
+import { doc, getDoc, getDocs, collection } from 'firebase/firestore'; 
 import { db } from '../../firebase';
 
 export const ExamManagement: React.FC = () => {
   const { exams, students, importExams, clearAllExams, processAdminDeliveryScan } = useApp();
-  const [selectedCommittee, setSelectedCommittee] = useState<{number: string, location: string, grades: string[]} | null>(null);
   
-  // UI States
+  // --- UI States ---
+  const [selectedCommittee, setSelectedCommittee] = useState<{number: string, location: string, grades: string[]} | null>(null);
   const [showWizard, setShowWizard] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
+  const [showDeleteAllModal, setShowDeleteAllModal] = useState(false);
+  const [isFetching, setIsFetching] = useState(false); // مؤشر التحميل
+  
+  // --- Scanner States ---
   const [scanResult, setScanResult] = useState<{success: boolean, msg: string} | null>(null);
   const [lastScannedId, setLastScannedId] = useState<string | null>(null);
-  const [showDeleteAllModal, setShowDeleteAllModal] = useState(false);
-
-  // Data States
-  const [cloudSchedule, setCloudSchedule] = useState<ExamSchedule | null>(null);
-  const [cloudCommittees, setCloudCommittees] = useState<Record<string, Student[]>>({});
-  const [committeeLocations, setCommitteeLocations] = useState<Record<string, string>>({}); // تخزين المواقع
-
   const scannerRef = useRef<Html5Qrcode | null>(null);
 
-  // --- 1. تجميع الطلاب حسب اللجان ---
+  // --- Data States ---
+  const [cloudSchedule, setCloudSchedule] = useState<ExamSchedule | null>(null);
+  const [cloudCommittees, setCloudCommittees] = useState<Record<string, Student[]>>({});
+  const [committeeLocations, setCommitteeLocations] = useState<Record<string, string>>({}); 
+
+  // 1. تجميع الطلاب حسب اللجان (للاستخدام الداخلي عند التوليد)
   useEffect(() => {
     if (students.length > 0) {
         const groups: Record<string, Student[]> = {};
@@ -38,7 +43,7 @@ export const ExamManagement: React.FC = () => {
     }
   }, [students]);
 
-  // --- 2. تجميع المظاريف الحالية للعرض ---
+  // 2. تجميع المظاريف الحالية (للعرض في الشاشة)
   const examsByCommittee = useMemo(() => {
       const groups: Record<string, ExamEnvelope[]> = {};
       exams.forEach(exam => {
@@ -48,6 +53,7 @@ export const ExamManagement: React.FC = () => {
       return groups;
   }, [exams]);
 
+  // قائمة اللجان الجاهزة للتسليم (للمحاكاة)
   const pendingDeliveryCommittees = useMemo(() => {
       const today = new Date().toISOString().split('T')[0];
       const pending = exams.filter(e => 
@@ -57,7 +63,7 @@ export const ExamManagement: React.FC = () => {
       return Array.from(new Set(pending)).sort();
   }, [exams]);
 
-  // --- 3. منطق الماسح الضوئي ---
+  // 3. إدارة الماسح الضوئي (Scanner Logic)
   useEffect(() => {
     if (showScanner) {
         const initScanner = async () => {
@@ -105,41 +111,47 @@ export const ExamManagement: React.FC = () => {
       }
   };
 
-  // --- 4. جلب الجدول + تفاصيل اللجان من السحابة ---
+  // 4. المحرك السحابي: جلب الجدول + تفاصيل اللجان (Professional Fetch)
   const fetchCloudData = async () => {
+      setIsFetching(true);
       try {
-          // أ. جلب الجدول
+          // أ. جلب الجدول (Exam Schedule)
           const scheduleDocRef = doc(db, 'system_config', 'exam_schedule');
           const scheduleSnap = await getDoc(scheduleDocRef);
           
-          if (scheduleSnap.exists()) {
-              setCloudSchedule(scheduleSnap.data() as ExamSchedule);
-              
-              // ب. جلب تفاصيل اللجان (المواقع)
-              // نبحث في مجموعة system_config عن المستندات التي تبدأ بـ committee_
-              const configSnapshot = await getDocs(collection(db, 'system_config'));
-              const locations: Record<string, string> = {};
-              
-              configSnapshot.forEach(doc => {
-                  const data = doc.data();
-                  // تحقق هل هذا مستند لجنة؟ (إما عن طريق الاسم أو الحقول)
-                  if (doc.id.startsWith('committee_') && data.committeeNumber && data.location) {
-                      locations[data.committeeNumber] = data.location;
-                  }
-              });
-              setCommitteeLocations(locations);
-
-              setShowWizard(true);
-          } else {
-              alert("لم يتم العثور على جدول في النظام! يرجى التأكد من ضغط زر 'تصدير للنظام الذكي' في النظام الأول.");
+          if (!scheduleSnap.exists()) {
+              alert("لم يتم العثور على جدول! تأكد من ضغط 'تصدير للنظام الذكي' في النظام الأول.");
+              setIsFetching(false);
+              return;
           }
+
+          setCloudSchedule(scheduleSnap.data() as ExamSchedule);
+          
+          // ب. جلب بيانات اللجان (Locations MetaData)
+          const configSnapshot = await getDocs(collection(db, 'system_config'));
+          const locationsMap: Record<string, string> = {};
+          
+          configSnapshot.forEach(docSnap => {
+              const data = docSnap.data();
+              // التأكد من أن المستند يخص لجنة ويحتوي على موقع
+              if (data.committeeNumber && data.location) {
+                  // توحيد النوع إلى String لضمان التوافق
+                  locationsMap[String(data.committeeNumber)] = data.location;
+              }
+          });
+          
+          setCommitteeLocations(locationsMap);
+          setShowWizard(true);
+
       } catch (error) {
-          console.error(error);
-          alert("حدث خطأ أثناء الاتصال بقاعدة البيانات.");
+          console.error("Cloud Fetch Error:", error);
+          alert("حدث خطأ أثناء الاتصال بالسحابة. تحقق من الإنترنت.");
+      } finally {
+          setIsFetching(false);
       }
   };
 
-  // --- 5. المحرك الذكي: توليد المظاريف ---
+  // 5. محرك التوليد الذكي (The Core Generator)
   const handleGenerate = () => {
       if (!cloudSchedule) return;
 
@@ -147,31 +159,30 @@ export const ExamManagement: React.FC = () => {
       const committeeKeys = Object.keys(cloudCommittees).filter(k => k !== 'General' && k !== 'احتياط');
 
       if (committeeKeys.length === 0) {
-          alert("لا توجد لجان موزعة (لا يوجد طلاب مرتبطين بلجان). تأكد من استيراد الطلاب وتوزيعهم في النظام الأول.");
+          alert("لا توجد لجان موزعة. تأكد من استيراد الطلاب وتوزيعهم في النظام الأول.");
           return;
       }
 
-      // 1. المرور على كل يوم
+      // Loop: Days -> Periods -> Committees
       cloudSchedule.days.forEach((daySchedule) => {
           const dateStr = daySchedule.date;
 
-          // 2. المرور على كل فترة
           daySchedule.periods.forEach((period) => {
               
-              // 3. المرور على كل لجنة وإنشاء مظروف لها إن وجد اختبار
               committeeKeys.forEach(commNum => {
                   const commStudents = cloudCommittees[commNum];
                   
-                  // تحليل المواد
-                  const relevantSubjects: string[] = [];
+                  // تحليل المواد المطلوبة لهذه اللجنة
                   const affectedStudents: Student[] = [];
                   const gradesInCommittee: string[] = [];
+                  const relevantSubjects: string[] = [];
                   
                   let earliestStart = "23:59";
                   let latestEnd = "00:00";
 
                   commStudents.forEach(student => {
                       const studentStage = student.grade; 
+                      // البحث عن مادة لهذه المرحلة في هذه الفترة
                       const subjectDetail: SubjectDetail | undefined = period.subjects?.[studentStage];
 
                       if (subjectDetail && subjectDetail.name) {
@@ -180,23 +191,21 @@ export const ExamManagement: React.FC = () => {
                               subject: subjectDetail.name 
                           });
 
-                          if (!relevantSubjects.includes(subjectDetail.name)) relevantSubjects.push(subjectDetail.name);
                           if (!gradesInCommittee.includes(studentStage)) gradesInCommittee.push(studentStage);
+                          if (!relevantSubjects.includes(subjectDetail.name)) relevantSubjects.push(subjectDetail.name);
 
+                          // ضبط التوقيت حسب المادة الأبكر والأطول
                           if (subjectDetail.startTime < earliestStart) earliestStart = subjectDetail.startTime;
                           if (subjectDetail.endTime > latestEnd) latestEnd = subjectDetail.endTime;
                       }
                   });
 
+                  // إنشاء المظروف إذا وجدنا طلاباً
                   if (affectedStudents.length > 0) {
-                      const subjectDisplay = gradesInCommittee.map(g => {
-                          const sub = period.subjects?.[g];
-                          return sub ? `${sub.name}` : '';
-                      }).filter(Boolean).join(' + ');
-
+                      const subjectDisplay = relevantSubjects.join(' + ');
                       const examId = `EX-${commNum}-${dateStr}-P${period.periodId}`;
                       
-                      // استخدام الموقع الحقيقي من السحابة أو الافتراضي
+                      // ** السحر هنا: استخدام الموقع الحقيقي من السحابة **
                       const realLocation = committeeLocations[commNum] || `مقر ${commNum}`;
 
                       newExams.push({
@@ -204,7 +213,7 @@ export const ExamManagement: React.FC = () => {
                           subject: subjectDisplay, 
                           grades: gradesInCommittee,
                           committeeNumber: commNum,
-                          location: realLocation, // <--- هنا التعديل المهم
+                          location: realLocation, // سيظهر "معمل الحاسب" هنا
                           date: dateStr,
                           startTime: earliestStart === "23:59" ? "07:30" : earliestStart,
                           endTime: latestEnd === "00:00" ? "10:00" : latestEnd,
@@ -220,76 +229,90 @@ export const ExamManagement: React.FC = () => {
 
       importExams(newExams);
       setShowWizard(false);
-      alert(`تم توليد ${newExams.length} مظروف اختبار بنجاح!`);
+      alert(`✅ تم توليد ${newExams.length} مظروف اختبار بنجاح!`);
   };
 
   return (
     <div className="space-y-6 animate-fade-in">
-      {/* Header */}
+      {/* 1. Header & Actions */}
       <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col md:flex-row justify-between items-center gap-4">
         <div>
           <h2 className="text-2xl font-bold text-gray-800">إدارة الاختبارات</h2>
-          <p className="text-gray-500">
-             {students.length > 0 ? `النظام متصل: ${students.length} طالب جاهز` : 'جاري مزامنة البيانات...'}
+          <p className="text-gray-500 text-sm mt-1">
+             {students.length > 0 
+                ? `● النظام متصل: ${students.length} طالب و ${exams.length} مظروف` 
+                : '○ جاري مزامنة البيانات...'}
           </p>
         </div>
         
         <div className="flex gap-2">
              <button 
                 onClick={() => setShowScanner(true)}
-                className="bg-purple-600 text-white border border-purple-600 px-4 py-3 rounded-lg hover:bg-purple-700 flex items-center gap-2 shadow-lg shadow-purple-200"
+                className="bg-purple-600 text-white border border-purple-600 px-4 py-3 rounded-lg hover:bg-purple-700 flex items-center gap-2 shadow-lg shadow-purple-200 transition-all active:scale-95"
              >
                 <ScanLine size={20} />
-                <span className="hidden md:inline">استلام للكنترول (Scan)</span>
+                <span className="hidden md:inline font-bold">استلام للكنترول</span>
             </button>
 
              <button 
                 onClick={() => setShowDeleteAllModal(true)}
-                className="bg-red-50 text-red-600 border border-red-100 px-4 py-3 rounded-lg hover:bg-red-100 flex items-center gap-2"
+                className="bg-white text-red-600 border border-red-100 px-4 py-3 rounded-lg hover:bg-red-50 flex items-center gap-2 transition-colors"
+                title="تصفير الجدول"
              >
                 <Trash2 size={20} />
-                <span className="hidden md:inline">مسح الكل</span>
             </button>
 
             <button 
                 onClick={fetchCloudData}
-                className="bg-secondary hover:bg-secondary/90 text-white px-6 py-3 rounded-lg shadow-lg transition-colors font-bold flex items-center gap-2"
+                disabled={isFetching}
+                className={`text-white px-6 py-3 rounded-lg shadow-lg transition-all font-bold flex items-center gap-2 ${
+                    isFetching ? 'bg-secondary/70 cursor-wait' : 'bg-secondary hover:bg-green-700 active:scale-95'
+                }`}
             >
-                <Database size={20} />
-                جلب الجدول وتوليد المظاريف
+                {isFetching ? <Loader2 size={20} className="animate-spin" /> : <Database size={20} />}
+                <span>{isFetching ? 'جاري الاتصال...' : 'جلب الجدول وتوليد المظاريف'}</span>
             </button>
         </div>
       </div>
 
+      {/* 2. Empty State */}
       {exams.length === 0 ? (
-        <div className="bg-white rounded-xl border-2 border-dashed border-gray-300 p-12 text-center">
-            <div className="bg-gray-50 p-4 rounded-full w-20 h-20 flex items-center justify-center mx-auto mb-4">
-                <RefreshCw size={40} className="text-gray-400" />
+        <div className="bg-white rounded-xl border-2 border-dashed border-gray-300 p-16 text-center">
+            <div className="bg-gray-50 p-6 rounded-full w-24 h-24 flex items-center justify-center mx-auto mb-6">
+                <RefreshCw size={48} className="text-gray-400" />
             </div>
-            <h3 className="text-xl font-bold text-gray-700">الجدول فارغ</h3>
-            <p className="text-gray-500 mt-2">اضغط على زر "جلب الجدول وتوليد المظاريف" لاستيراد الخطة من النظام الأول.</p>
+            <h3 className="text-2xl font-bold text-gray-700 mb-2">الجدول فارغ</h3>
+            <p className="text-gray-500 max-w-md mx-auto">
+                النظام جاهز. اضغط على زر <b>"جلب الجدول"</b> في الأعلى لاستيراد الخطة المعتمدة والمقرات من النظام الرئيسي.
+            </p>
         </div>
       ) : (
+          /* 3. Exams Grid */
           <div className="space-y-8">
             {Object.entries(examsByCommittee).map(([committeeNum, committeeExams]: [string, ExamEnvelope[]]) => {
                 const firstExam = committeeExams[0];
-                const allGrades = unique(committeeExams.reduce((acc, e) => [...acc, ...e.grades], [] as string[]));
+                // تجميع المراحل الموجودة في هذه اللجنة
+                const allGrades = Array.from(new Set(committeeExams.flatMap(e => e.grades)));
                 
                 return (
-                    <div key={committeeNum} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                    <div key={committeeNum} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition-shadow">
+                        {/* Committee Header */}
                         <div className="bg-gray-50 p-4 border-b border-gray-200 flex flex-col md:flex-row justify-between items-center gap-4">
                             <div className="flex items-center gap-4">
-                                <div className="bg-primary-600 text-white p-3 rounded-lg shadow-sm">
-                                    <span className="block text-xs opacity-75">لجنة رقم</span>
-                                    <span className="text-xl font-bold">{committeeNum}</span>
+                                <div className="bg-white border border-gray-200 w-16 h-16 rounded-xl flex flex-col items-center justify-center shadow-sm">
+                                    <span className="text-[10px] text-gray-400 font-bold uppercase">Lajna</span>
+                                    <span className="text-2xl font-black text-secondary">{committeeNum}</span>
                                 </div>
                                 <div>
                                     <div className="flex items-center gap-2 text-gray-800 font-bold text-lg">
-                                        <MapPin size={18} className="text-primary-500" />
+                                        <MapPin size={18} className="text-red-500" />
+                                        {/* هنا يظهر اسم المقر الصحيح */}
                                         {firstExam.location}
                                     </div>
-                                    <div className="text-sm text-gray-500">
-                                        {allGrades.join(' • ')}
+                                    <div className="text-sm text-gray-500 flex gap-2 mt-1">
+                                        {allGrades.map(g => (
+                                            <span key={g} className="bg-white border px-2 py-0.5 rounded text-xs">{g}</span>
+                                        ))}
                                     </div>
                                 </div>
                             </div>
@@ -300,26 +323,28 @@ export const ExamManagement: React.FC = () => {
                                     location: firstExam.location,
                                     grades: allGrades
                                 })}
-                                className="bg-black text-white px-6 py-2 rounded-lg hover:bg-gray-800 transition-colors flex items-center gap-2 shadow-lg"
+                                className="bg-gray-900 text-white px-5 py-2.5 rounded-lg hover:bg-black transition-colors flex items-center gap-2 text-sm font-bold shadow-lg"
                             >
-                                <Printer size={18} />
+                                <Printer size={16} />
                                 طباعة ملصق اللجنة
                             </button>
                         </div>
 
-                        <div className="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 bg-gray-50/50">
+                        {/* Exams Cards */}
+                        <div className="p-5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 bg-gray-50/30">
                             {committeeExams.sort((a,b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime)).map(exam => (
-                                <div key={exam.id} className="bg-white p-4 rounded-lg border border-gray-100 shadow-sm flex flex-col relative hover:shadow-md transition-all">
-                                    <div className={`absolute top-0 left-0 w-1 h-full rounded-l-lg ${
+                                <div key={exam.id} className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex flex-col relative group hover:border-secondary/30 transition-all">
+                                    {/* Status Indicator */}
+                                    <div className={`absolute top-4 left-4 w-2 h-2 rounded-full ${
                                         exam.status === EnvelopeStatus.COMPLETED ? 'bg-green-500' : 
                                         exam.status === EnvelopeStatus.RECEIVED ? 'bg-blue-500' : 'bg-gray-300'
                                     }`}></div>
                                     
-                                    <div className="flex justify-between items-start mb-2 pl-3">
-                                        <span className="text-xs font-bold text-gray-500 flex items-center gap-1">
+                                    <div className="flex justify-between items-start mb-3 pl-4">
+                                        <span className="text-xs font-bold text-gray-500 flex items-center gap-1 bg-gray-50 px-2 py-1 rounded">
                                             <Calendar size={12}/> {exam.date}
-                                        </div>
-                                        <span className={`text-[10px] px-2 py-0.5 rounded-full ${
+                                        </span>
+                                        <span className={`text-[10px] px-2 py-1 rounded-full font-bold ${
                                             exam.status === EnvelopeStatus.COMPLETED ? 'bg-green-100 text-green-700' : 
                                             exam.status === EnvelopeStatus.RECEIVED ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'
                                         }`}>
@@ -329,24 +354,28 @@ export const ExamManagement: React.FC = () => {
                                         </span>
                                     </div>
                                     
-                                    <h4 className="font-bold text-gray-800 pl-3 line-clamp-2 h-10" title={exam.subject}>{exam.subject}</h4>
-                                    <div className="text-xs text-gray-400 pl-3 mt-1 flex items-center gap-1">
-                                        <Clock size={12}/> {exam.startTime} - {exam.endTime}
+                                    <h4 className="font-bold text-gray-800 text-sm line-clamp-2 min-h-[40px]" title={exam.subject}>
+                                        {exam.subject}
+                                    </h4>
+                                    
+                                    <div className="text-xs text-gray-400 mt-2 flex items-center gap-1 border-t pt-2 border-dashed">
+                                        <Clock size={12}/> 
+                                        <span className="font-mono">{exam.startTime} - {exam.endTime}</span>
                                     </div>
                                     
-                                    <div className="mt-3 pl-3 flex gap-2">
+                                    <div className="mt-4 pt-2">
                                         {(exam.status === EnvelopeStatus.COMPLETED || exam.status === EnvelopeStatus.DELIVERED) && (
                                             <button 
-                                                onClick={() => deliverEnvelopeToControl(exam.id)}
+                                                onClick={() => processAdminDeliveryScan(exam.committeeNumber)} // اختصار للتجربة
                                                 disabled={exam.status === EnvelopeStatus.DELIVERED}
-                                                className={`text-xs flex-1 py-1.5 rounded flex items-center justify-center gap-1 ${
+                                                className={`w-full py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-2 transition-colors ${
                                                     exam.status === EnvelopeStatus.DELIVERED 
-                                                    ? 'bg-green-50 text-green-600' 
+                                                    ? 'bg-green-50 text-green-600 cursor-default' 
                                                     : 'bg-green-600 text-white hover:bg-green-700'
                                                 }`}
                                             >
-                                                {exam.status === EnvelopeStatus.DELIVERED ? <CheckCircle size={12}/> : null}
-                                                {exam.status === EnvelopeStatus.DELIVERED ? 'تم الاستلام' : 'استلام للكنترول'}
+                                                {exam.status === EnvelopeStatus.DELIVERED ? <CheckCircle size={14}/> : <ScanLine size={14}/>}
+                                                {exam.status === EnvelopeStatus.DELIVERED ? 'تم الاستلام' : 'استلام يدوي'}
                                             </button>
                                         )}
                                     </div>
@@ -359,82 +388,124 @@ export const ExamManagement: React.FC = () => {
           </div>
       )}
 
-      {/* ADMIN SCANNER MODAL */}
-      {showScanner && (
-         <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
-            <div className="bg-gray-900 rounded-2xl w-full max-w-lg overflow-hidden relative shadow-2xl animate-scale-in border border-gray-700">
-               <button onClick={() => setShowScanner(false)} className="absolute top-4 right-4 bg-white/10 hover:bg-white/20 p-2 rounded-full text-white z-20"><X size={20}/></button>
-               <div className="p-8 flex flex-col items-center relative h-[450px]">
-                   <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2 z-10"><ScanLine className="text-purple-400" /> ماسح استلام المظاريف</h3>
-                   <div className="absolute inset-0 z-0 bg-black flex items-center justify-center"><div id="admin-reader" className="w-full h-full"></div></div>
-               </div>
-            </div>
-         </div>
-      )}
-
-      {/* CONFIRMATION WIZARD */}
+      {/* 4. Confirmation Wizard (The Bridge) */}
       {showWizard && cloudSchedule && (
-          <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-              <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl animate-scale-in">
-                  <div className="p-6 border-b flex justify-between items-center">
-                      <h3 className="font-bold text-xl flex items-center gap-2"><CheckCircle className="text-green-500" /> تم جلب الجدول بنجاح</h3>
-                      <button onClick={() => setShowWizard(false)}><X size={20}/></button>
+          <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+              <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl animate-scale-in overflow-hidden">
+                  <div className="bg-secondary p-6 text-white flex justify-between items-center">
+                      <h3 className="font-bold text-xl flex items-center gap-2">
+                          <CheckCircle className="text-white" /> البيانات جاهزة
+                      </h3>
+                      <button onClick={() => setShowWizard(false)} className="hover:bg-white/20 p-2 rounded-full"><X size={20}/></button>
                   </div>
-                  <div className="p-6 space-y-4">
-                      <div className="bg-blue-50 p-4 rounded-xl text-sm text-blue-800 border border-blue-100">
-                          <p><strong>ملخص البيانات المستلمة:</strong></p>
-                          <ul className="list-disc list-inside mt-2 space-y-1">
-                              <li>عدد الأيام: {cloudSchedule.days.length}</li>
-                              <li>عدد الطلاب الجاهزون: {students.length}</li>
-                              <li>عدد اللجان: {Object.keys(cloudCommittees).length}</li>
-                              <li>عدد المقرات المعرفة: {Object.keys(committeeLocations).length}</li>
-                          </ul>
+                  
+                  <div className="p-8 space-y-6">
+                      <div className="space-y-4">
+                          <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg border border-gray-100">
+                              <span className="text-gray-600 text-sm">أيام الاختبارات</span>
+                              <span className="font-bold text-gray-900">{cloudSchedule.days.length} أيام</span>
+                          </div>
+                          <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg border border-gray-100">
+                              <span className="text-gray-600 text-sm">عدد اللجان</span>
+                              <span className="font-bold text-gray-900">{Object.keys(cloudCommittees).length} لجنة</span>
+                          </div>
+                          <div className="flex justify-between items-center p-3 bg-blue-50 rounded-lg border border-blue-100">
+                              <span className="text-blue-700 text-sm flex items-center gap-2"><MapPin size={16}/> المقرات المعرفة</span>
+                              <span className="font-bold text-blue-900">{Object.keys(committeeLocations).length} مقر</span>
+                          </div>
                       </div>
-                      <p className="text-gray-600 text-sm">سيقوم النظام بدمج الطلاب مع موادهم وأوقاتهم وإنشاء المظاريف الرقمية.</p>
-                      <button onClick={handleGenerate} className="w-full bg-primary-600 text-white py-3 rounded-xl font-bold hover:bg-primary-700 shadow-lg flex items-center justify-center gap-2">
-                          <Play size={20}/> اعتماد وإنشاء المظاريف
-                      </button>
+
+                      <div className="text-center">
+                          <p className="text-gray-500 text-sm mb-4">سيتم إنشاء المظاريف الرقمية وربط الطلاب بمقراتهم.</p>
+                          <button 
+                              onClick={handleGenerate}
+                              className="w-full bg-secondary text-white py-4 rounded-xl font-bold text-lg hover:bg-green-700 shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-2"
+                          >
+                              <Play size={24}/> 
+                              اعتماد وإنشاء المظاريف
+                          </button>
+                      </div>
                   </div>
               </div>
           </div>
       )}
 
-      {/* STATIC COMMITTEE QR Modal */}
+      {/* 5. Modals (Scanner, Delete, QR) */}
+      
+      {/* QR Modal */}
       {selectedCommittee && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-sm overflow-hidden animate-scale-in">
-            <div className="bg-black p-4 flex justify-between items-center text-white">
-              <h3 className="font-bold">ملصق اللجنة</h3>
-              <button onClick={() => setSelectedCommittee(null)} className="hover:bg-white/20 p-1 rounded-full"><X size={20} /></button>
-            </div>
+        <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-sm overflow-hidden animate-scale-in relative">
+            <button onClick={() => setSelectedCommittee(null)} className="absolute top-4 left-4 bg-gray-100 p-2 rounded-full hover:bg-gray-200"><X size={20} /></button>
             <div className="p-8 flex flex-col items-center text-center">
-              <div className="border-4 border-black p-4 rounded-xl mb-6 bg-white">
-                <QRCodeCanvas value={JSON.stringify({ type: 'committee', id: selectedCommittee.number })} size={200} level="H" />
+              <div className="text-4xl font-black text-gray-900 mb-2">لجنة {selectedCommittee.number}</div>
+              <div className="flex items-center justify-center gap-2 text-gray-500 mb-6 bg-gray-50 px-4 py-1.5 rounded-full text-sm font-bold border border-gray-100">
+                  <MapPin size={16} className="text-secondary"/> {selectedCommittee.location}
               </div>
-              <div className="text-4xl font-black text-gray-800 mb-2">لجنة {selectedCommittee.number}</div>
-              <div className="flex items-center justify-center gap-2 text-gray-500 mb-4 bg-gray-100 px-3 py-1 rounded-full text-sm"><MapPin size={16} /> {selectedCommittee.location}</div>
-              <button onClick={() => window.print()} className="mt-6 w-full bg-gray-900 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2"><Printer size={20} /> طباعة الملصق</button>
+              <div className="border-4 border-black p-4 rounded-2xl mb-6 bg-white shadow-inner">
+                <QRCodeCanvas value={JSON.stringify({ type: 'committee', id: selectedCommittee.number })} size={220} level="H" />
+              </div>
+              <button onClick={() => window.print()} className="w-full bg-black text-white py-4 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-gray-800">
+                <Printer size={20} /> طباعة الملصق
+              </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Delete All Modal */}
+      {/* Admin Scanner */}
+      {showScanner && (
+         <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4">
+            <div className="bg-gray-900 rounded-2xl w-full max-w-lg overflow-hidden relative shadow-2xl border border-gray-800">
+               <button onClick={() => setShowScanner(false)} className="absolute top-4 right-4 bg-white/10 hover:bg-white/20 p-2 rounded-full text-white z-20"><X size={20}/></button>
+               <div className="p-8 flex flex-col items-center relative h-[500px]">
+                   <h3 className="text-xl font-bold text-white mb-8 flex items-center gap-3 z-10">
+                       <ScanLine className="text-purple-400" /> ماسح الكنترول
+                   </h3>
+                   <div className="absolute inset-0 z-0 bg-black flex items-center justify-center overflow-hidden rounded-xl">
+                       <div id="admin-reader" className="w-full h-full object-cover opacity-80"></div>
+                   </div>
+                   
+                   {/* Feedback Overlay */}
+                   {scanResult && (
+                       <div className="absolute bottom-10 left-0 right-0 flex justify-center z-20">
+                           <div className={`px-6 py-3 rounded-full font-bold flex items-center gap-2 shadow-2xl animate-bounce ${
+                               scanResult.success ? 'bg-green-500 text-white' : 'bg-red-500 text-white'
+                           }`}>
+                               {scanResult.success ? <CheckCircle size={20}/> : <AlertTriangle size={20}/>}
+                               {scanResult.msg}
+                           </div>
+                       </div>
+                   )}
+
+                   {/* Quick Actions (Simulation) */}
+                   <div className="absolute bottom-4 w-full px-8 z-10">
+                       <p className="text-center text-xs text-gray-500 mb-2">لجان جاهزة للتسليم (محاكاة):</p>
+                       <div className="flex gap-2 overflow-x-auto pb-2 justify-center">
+                           {pendingDeliveryCommittees.map(c => (
+                               <button key={c} onClick={() => handleControlScan(c)} className="bg-purple-900/50 border border-purple-500/30 text-purple-200 px-3 py-1 rounded text-xs hover:bg-purple-600 transition-colors">
+                                   {c}
+                               </button>
+                           ))}
+                       </div>
+                   </div>
+               </div>
+            </div>
+         </div>
+      )}
+
+      {/* Delete Modal */}
        {showDeleteAllModal && (
-          <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
               <div className="bg-white rounded-2xl w-full max-w-md overflow-hidden shadow-2xl animate-scale-in">
-                  <div className="bg-red-600 text-white p-6 flex justify-between items-center">
-                      <h3 className="text-xl font-bold">مسح البيانات</h3>
-                      <button onClick={() => setShowDeleteAllModal(false)} className="hover:bg-white/20 p-2 rounded-full"><X size={20}/></button>
+                  <div className="bg-red-50 p-6 flex flex-col items-center text-center border-b border-red-100">
+                      <div className="bg-red-100 p-4 rounded-full mb-4"><Trash2 size={32} className="text-red-600"/></div>
+                      <h3 className="text-xl font-bold text-gray-900">مسح كافة البيانات؟</h3>
+                      <p className="text-gray-500 mt-2 text-sm">سيتم حذف جميع المظاريف واللجان الحالية. هذا الإجراء لا يمكن التراجع عنه.</p>
                   </div>
-                  <div className="p-8 text-center space-y-4">
-                      <div className="bg-red-50 p-4 rounded-full w-16 h-16 flex items-center justify-center mx-auto text-red-600 mb-2"><Trash2 size={32} /></div>
-                      <h4 className="font-bold text-gray-900 text-lg">هل أنت متأكد؟</h4>
-                      <p className="text-gray-600">سيؤدي هذا الإجراء إلى حذف جميع المظاريف الحالية.</p>
-                      <div className="flex gap-3 mt-6">
-                          <button onClick={() => setShowDeleteAllModal(false)} className="flex-1 bg-gray-100 text-gray-700 py-3 rounded-xl font-bold">إلغاء</button>
-                          <button onClick={() => { clearAllExams(); setShowDeleteAllModal(false); }} className="flex-1 bg-red-600 text-white py-3 rounded-xl font-bold">نعم، مسح الكل</button>
-                      </div>
+                  <div className="p-4 bg-white flex gap-3">
+                      <button onClick={() => setShowDeleteAllModal(false)} className="flex-1 bg-gray-100 text-gray-700 py-3 rounded-xl font-bold hover:bg-gray-200 transition-colors">إلغاء</button>
+                      <button onClick={() => { clearAllExams(); setShowDeleteAllModal(false); }} className="flex-1 bg-red-600 text-white py-3 rounded-xl font-bold hover:bg-red-700 transition-colors">نعم، مسح الكل</button>
                   </div>
               </div>
           </div>
