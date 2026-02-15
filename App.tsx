@@ -22,17 +22,19 @@ const AppContent: React.FC = () => {
     if (userRole === Role.COUNSELOR) setCurrentPage('counselor_dashboard');
   }, [userRole]);
 
-  // ✅ تصحيح: محول البيانات لتفادي أخطاء TypeScript عند البناء
+  // ✅ الوظيفة الإبداعية: محول البيانات الذكي (Data Adapter)
+  // يقوم بتحويل البيانات السحابية الحية لتتوافق مع نظام الطباعة الورقي القديم
   const getPrintData = () => {
-      // 1. تحويل الطلاب ليتوافقوا مع مركز الطباعة (System 1 Format)
+      // 1. تحويل الطلاب ليتوافقوا مع مركز الطباعة
+      // (Mapping: id -> studentId, className -> class)
       const mappedStudents = students.map(s => ({
           ...s,
-          studentId: s.id,        // تحويل id -> studentId
-          class: s.className,     // تحويل className -> class
-          phone: s.parentPhone    // تحويل parentPhone -> phone
+          studentId: s.id,        
+          class: s.className,     
+          phone: s.parentPhone    
       }));
 
-      // 2. استنتاج اللجان
+      // 2. استنتاج قائمة اللجان تلقائياً من المظاريف والطلاب
       const uniqueCommittees = Array.from(new Set(
           [...exams.map(e => e.committeeNumber), ...students.map(s => s.committeeNumber)]
           .filter(Boolean)
@@ -46,7 +48,7 @@ const AppContent: React.FC = () => {
           invigilatorCount: 1
       }));
 
-      // 3. بناء المراحل
+      // 3. بناء هيكل المراحل الافتراضي للطباعة
       const stagesData = [
           { 
               id: 1, name: 'أول ثانوي', prefix: '1', total: 0, 
@@ -71,13 +73,14 @@ const AppContent: React.FC = () => {
       };
   };
 
+  // توجيهات تسجيل الدخول
   if (!userRole) return <Login />;
   if (userRole === Role.TEACHER) return <TeacherDashboard />;
 
   const renderPage = () => {
     switch (currentPage) {
         case 'dashboard': return <AdminDashboard />;
-        // ✅ تمرير البيانات المصححة لمركز الطباعة
+        // ✅ ربط مركز الطباعة بالبيانات المحولة
         case 'print': return <PrintCenter data={getPrintData() as any} onUpdateSchool={() => {}} />;
         case 'exams': return <ExamManagement />;
         case 'teachers': return <TeacherManagement />;
