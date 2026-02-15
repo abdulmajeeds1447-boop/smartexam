@@ -1,22 +1,31 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { AttendanceStatus, EnvelopeStatus } from '../../types';
-import { Printer, Calendar, FileText, Bell, CheckCircle, Clock, AlertTriangle, Filter } from 'lucide-react';
+import { Printer, Calendar, FileText, Bell, AlertTriangle, ClipboardList, PenTool, CheckCircle2 } from 'lucide-react';
 
-type ReportTab = 'ABSENCE' | 'COMMITTEES' | 'NOTIFICATIONS';
+type ReportTab = 'LOGISTICS' | 'ABSENCE' | 'NOTIFICATIONS';
 
 export const Reports: React.FC = () => {
-  const { exams, notifications, teachers } = useApp();
-  const [activeTab, setActiveTab] = useState<ReportTab>('COMMITTEES'); // Default to Committees for Control
+  const { exams, notifications } = useApp();
+  const [activeTab, setActiveTab] = useState<ReportTab>('LOGISTICS');
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
-  const [selectedPeriod, setSelectedPeriod] = useState<string>('ALL'); // 'ALL' | 'الفترة الأولى' | 'الفترة الثانية'
 
-  // --- REPORT DATA PROCESSING ---
+  // 1. بيانات سجل العمليات (Chain of Custody)
+  const logisticsData = exams
+    .filter(e => e.date === selectedDate)
+    .sort((a, b) => a.committeeNumber.localeCompare(b.committeeNumber, 'en', {numeric: true}))
+    .map(exam => ({
+        committee: exam.committeeNumber,
+        subject: exam.subject,
+        teacher: exam.teacherId || '---',
+        status: exam.status,
+        startTime: exam.startTime,
+        endTime: exam.endTime
+    }));
 
-  // 1. Absence Data
+  // 2. بيانات الغياب
   const absenceData = exams
     .filter(e => e.date === selectedDate)
-    .filter(e => selectedPeriod === 'ALL' || e.period === selectedPeriod)
     .flatMap(exam => {
         return exam.students
             .filter(student => {
@@ -27,265 +36,206 @@ export const Reports: React.FC = () => {
                 studentName: student.name,
                 grade: student.grade,
                 examSubject: exam.subject,
-                committee: exam.committeeNumber,
-                period: exam.period
+                committee: exam.committeeNumber
             }));
     });
 
-  // 2. Committee Operations Data (Handover Report)
-  const committeesData = exams
-    .filter(e => e.date === selectedDate)
-    .filter(e => selectedPeriod === 'ALL' || e.period === selectedPeriod)
-    // Sort: Date (Implicitly same) -> Committee Number (Numeric)
-    .sort((a, b) => a.committeeNumber.localeCompare(b.committeeNumber, 'en', { numeric: true }));
-
-  // 3. Notifications Data
-  const notificationsData = [...notifications].sort((a, b) => b.timestamp - a.timestamp);
-
-
-  const handlePrint = () => {
-    window.print();
-  };
-
   return (
-    <div className="space-y-6 animate-fade-in">
-      {/* Header - Visible on Print as Report Header */}
-      <div className="flex flex-col md:flex-row justify-between items-center bg-white p-6 rounded-xl shadow-sm border border-gray-100 gap-4 print:shadow-none print:border-0 print:p-0 print:mb-8 print:border-b-2 print:border-gray-800 print:pb-4">
+    <div className="space-y-6 animate-fade-in pb-20">
+      
+      {/* Header (الشاشة فقط) */}
+      <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 flex flex-col md:flex-row justify-between items-center gap-4 print:hidden">
         <div>
-          <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
-             <FileText className="text-primary-600 print:hidden" />
-             {activeTab === 'COMMITTEES' ? 'بيان تسليم واستلام مظاريف الاختبارات' : 
-              activeTab === 'ABSENCE' ? 'تقرير الغياب اليومي' : 'سجل العمليات'}
-          </h2>
-          <div className="mt-2 flex gap-4 text-sm text-gray-600 print:text-black font-medium">
-             <p>التاريخ: <span dir="ltr">{selectedDate}</span></p>
-             <p>الفترة: {selectedPeriod === 'ALL' ? 'جميع الفترات' : selectedPeriod}</p>
-          </div>
+          <h2 className="text-2xl font-black text-slate-800">مركز التقارير والتوثيق</h2>
+          <p className="text-gray-500 text-sm mt-1">إصدار الكشوفات الرسمية وسجلات المتابعة</p>
         </div>
-        
-        <div className="flex gap-2 print:hidden">
-            <button 
-                onClick={handlePrint}
-                className="bg-black text-white px-6 py-3 rounded-lg hover:bg-gray-800 transition-colors flex items-center gap-2 shadow-lg"
-            >
-                <Printer size={20} />
-                طباعة التقرير
-            </button>
+        <div className="flex items-center gap-3 bg-gray-50 p-2 rounded-2xl border border-gray-200">
+            <Calendar className="text-gray-400 ml-2" size={20} />
+            <input 
+                type="date" 
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                className="bg-transparent border-none outline-none text-slate-800 font-bold"
+            />
         </div>
       </div>
 
-      {/* Controls & Tabs - Hidden on Print */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-2 flex flex-col md:flex-row gap-4 print:hidden items-center">
-          <div className="flex bg-gray-100 p-1 rounded-lg shrink-0">
-              <button 
-                onClick={() => setActiveTab('COMMITTEES')}
-                className={`px-4 py-2 rounded-md text-sm font-bold transition-all ${activeTab === 'COMMITTEES' ? 'bg-white text-primary-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-              >
-                  متابعة اللجان
-              </button>
-              <button 
-                onClick={() => setActiveTab('ABSENCE')}
-                className={`px-4 py-2 rounded-md text-sm font-bold transition-all ${activeTab === 'ABSENCE' ? 'bg-white text-primary-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-              >
-                  تقرير الغياب
-              </button>
-              <button 
-                onClick={() => setActiveTab('NOTIFICATIONS')}
-                className={`px-4 py-2 rounded-md text-sm font-bold transition-all ${activeTab === 'NOTIFICATIONS' ? 'bg-white text-primary-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-              >
-                  سجل التنبيهات
-              </button>
+      {/* Header (للطباعة فقط - ترويسة رسمية) */}
+      <div className="hidden print:block text-center mb-8 border-b-2 border-black pb-4">
+          <h1 className="text-2xl font-black mb-2">المملكة العربية السعودية</h1>
+          <h2 className="text-xl font-bold">وزارة التعليم - إدارة الاختبارات</h2>
+          <h3 className="text-lg mt-4 border-2 border-black inline-block px-6 py-2 rounded-lg">
+              {activeTab === 'LOGISTICS' ? 'سجل تسليم واستلام مظاريف الاختبارات' : 'كشف الطلاب الغائبين'}
+          </h3>
+          <div className="flex justify-between mt-6 px-10 font-bold">
+              <p>التاريخ: {selectedDate}</p>
+              <p>الفصل الدراسي: الثاني 1447هـ</p>
           </div>
-
-          {(activeTab === 'ABSENCE' || activeTab === 'COMMITTEES') && (
-              <div className="flex flex-1 gap-2 justify-end items-center w-full">
-                  
-                  {/* Period Filter */}
-                  <div className="flex items-center gap-2 bg-gray-50 px-3 py-2 rounded-lg border border-gray-200">
-                      <Filter size={16} className="text-gray-500" />
-                      <select 
-                        value={selectedPeriod}
-                        onChange={(e) => setSelectedPeriod(e.target.value)}
-                        className="bg-transparent border-none text-sm focus:ring-0 text-gray-700 font-bold outline-none cursor-pointer"
-                      >
-                          <option value="ALL">جميع الفترات</option>
-                          <option value="الفترة الأولى">الفترة الأولى</option>
-                          <option value="الفترة الثانية">الفترة الثانية</option>
-                      </select>
-                  </div>
-
-                  {/* Date Filter */}
-                  <div className="flex items-center gap-2 bg-gray-50 px-3 py-2 rounded-lg border border-gray-200">
-                      <Calendar size={16} className="text-gray-500" />
-                      <input 
-                        type="date" 
-                        value={selectedDate}
-                        onChange={(e) => setSelectedDate(e.target.value)}
-                        className="bg-transparent border-none text-sm focus:ring-0 text-gray-700 font-bold outline-none cursor-pointer"
-                      />
-                  </div>
-              </div>
-          )}
       </div>
 
-      {/* REPORT CONTENT AREA */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden print:shadow-none print:border-0 print:overflow-visible">
+      {/* Tabs */}
+      <div className="flex gap-3 overflow-x-auto pb-2 custom-scrollbar print:hidden">
+          <button onClick={() => setActiveTab('LOGISTICS')} className={`px-6 py-4 rounded-2xl font-bold whitespace-nowrap transition-all flex items-center gap-3 ${activeTab === 'LOGISTICS' ? 'bg-slate-900 text-white shadow-lg shadow-slate-300 scale-105' : 'bg-white text-gray-500 hover:bg-gray-50 border border-gray-100'}`}>
+              <ClipboardList size={20} /> سجل الاستلام والتسليم
+          </button>
+          <button onClick={() => setActiveTab('ABSENCE')} className={`px-6 py-4 rounded-2xl font-bold whitespace-nowrap transition-all flex items-center gap-3 ${activeTab === 'ABSENCE' ? 'bg-slate-900 text-white shadow-lg shadow-slate-300 scale-105' : 'bg-white text-gray-500 hover:bg-gray-50 border border-gray-100'}`}>
+              <AlertTriangle size={20} /> كشف الغياب
+          </button>
+          <button onClick={() => setActiveTab('NOTIFICATIONS')} className={`px-6 py-4 rounded-2xl font-bold whitespace-nowrap transition-all flex items-center gap-3 ${activeTab === 'NOTIFICATIONS' ? 'bg-slate-900 text-white shadow-lg shadow-slate-300 scale-105' : 'bg-white text-gray-500 hover:bg-gray-50 border border-gray-100'}`}>
+              <Bell size={20} /> سجل العمليات
+          </button>
+      </div>
+
+      {/* Content Area */}
+      <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden min-h-[500px] print:shadow-none print:border-none print:rounded-none">
           
-          {/* ABSENCE REPORT */}
-          {activeTab === 'ABSENCE' && (
-              <div>
-                  <div className="p-6 bg-red-50 border-b border-red-100 print:hidden">
-                      <h3 className="text-lg font-bold text-red-800 flex items-center gap-2">
-                          <AlertTriangle size={20} />
-                          كشف الطلاب الغائبين
-                      </h3>
+          {/* 1. LOGISTICS REPORT */}
+          {activeTab === 'LOGISTICS' && (
+              <div className="p-0">
+                  <div className="p-6 border-b bg-gray-50 flex justify-between items-center print:hidden">
+                      <div>
+                          <h3 className="font-bold text-lg text-gray-800">حركة المظاريف اليومية</h3>
+                          <p className="text-xs text-gray-500 mt-1">توثيق خروج وعودة المظاريف (Chain of Custody)</p>
+                      </div>
+                      <button onClick={() => window.print()} className="bg-blue-600 text-white hover:bg-blue-700 px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 shadow-lg transition-all">
+                          <Printer size={18} /> طباعة السجل
+                      </button>
                   </div>
-                  {absenceData.length === 0 ? (
-                      <div className="p-12 text-center text-gray-500">لا يوجد غياب مسجل لهذا اليوم/الفترة</div>
-                  ) : (
-                      <table className="w-full text-right border-collapse">
-                          <thead className="bg-gray-50 text-gray-600 text-xs uppercase tracking-wider print:bg-gray-200 print:text-black">
+                  <div className="overflow-x-auto">
+                      <table className="w-full text-sm text-right print:text-black">
+                          <thead className="bg-gray-100 text-gray-600 font-bold border-b print:bg-gray-200 print:text-black border-black">
                               <tr>
-                                  <th className="p-4 border border-gray-200">اسم الطالب</th>
-                                  <th className="p-4 border border-gray-200">الصف</th>
-                                  <th className="p-4 border border-gray-200">المادة</th>
-                                  <th className="p-4 border border-gray-200">اللجنة</th>
-                                  <th className="p-4 border border-gray-200">الفترة</th>
+                                  <th className="p-4 w-20 border print:border-black">لجنة</th>
+                                  <th className="p-4 border print:border-black">المادة / الصفوف</th>
+                                  <th className="p-4 border print:border-black">المراقب المستلم</th>
+                                  <th className="p-4 border print:border-black">وقت البدء</th>
+                                  <th className="p-4 border print:border-black print:hidden">الحالة</th>
+                                  <th className="p-4 w-40 text-center bg-gray-200/50 border print:border-black">توقيع الاستلام</th>
+                                  <th className="p-4 w-40 text-center bg-gray-200/50 border print:border-black">توقيع التسليم</th>
                               </tr>
                           </thead>
-                          <tbody className="divide-y divide-gray-100 text-sm">
-                              {absenceData.map((record, idx) => (
-                                  <tr key={idx} className="hover:bg-gray-50">
-                                      <td className="p-4 border border-gray-200 font-bold text-gray-900">{record.studentName}</td>
-                                      <td className="p-4 border border-gray-200 text-gray-600">{record.grade}</td>
-                                      <td className="p-4 border border-gray-200 text-gray-600">{record.examSubject}</td>
-                                      <td className="p-4 border border-gray-200 text-gray-600 font-mono text-center">{record.committee}</td>
-                                      <td className="p-4 border border-gray-200 text-gray-600">{record.period}</td>
-                                  </tr>
-                              ))}
+                          <tbody className="divide-y divide-gray-100 print:divide-black">
+                              {logisticsData.length === 0 ? (
+                                  <tr><td colSpan={7} className="p-16 text-center text-gray-400">لا توجد اختبارات مسجلة لهذا اليوم</td></tr>
+                              ) : (
+                                  logisticsData.map((row, idx) => (
+                                      <tr key={idx} className="hover:bg-gray-50 transition-colors print:hover:bg-transparent">
+                                          <td className="p-4 font-black text-lg border print:border-black text-center">{row.committee}</td>
+                                          <td className="p-4 font-bold text-gray-800 border print:border-black">{row.subject}</td>
+                                          <td className="p-4 text-gray-600 border print:border-black font-medium">{row.teacher}</td>
+                                          <td className="p-4 font-mono text-gray-500 border print:border-black dir-ltr text-center">{row.startTime}</td>
+                                          <td className="p-4 border print:border-black print:hidden">
+                                              <span className={`px-2 py-1 rounded text-[10px] font-bold border ${
+                                                  row.status === EnvelopeStatus.DELIVERED ? 'bg-green-50 text-green-700 border-green-200' :
+                                                  row.status === EnvelopeStatus.RECEIVED ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                                                  'bg-gray-50 text-gray-500 border-gray-200'
+                                              }`}>
+                                                  {row.status === EnvelopeStatus.DELIVERED ? 'مؤرشف' :
+                                                   row.status === EnvelopeStatus.RECEIVED ? 'جاري' : 'انتظار'}
+                                              </span>
+                                          </td>
+                                          <td className="p-4 border border-dashed border-gray-300 print:border-solid print:border-black text-center opacity-30 h-16"></td>
+                                          <td className="p-4 border border-dashed border-gray-300 print:border-solid print:border-black text-center opacity-30 h-16"></td>
+                                      </tr>
+                                  ))
+                              )}
                           </tbody>
                       </table>
-                  )}
-                  <div className="p-4 bg-gray-50 text-xs text-gray-500 border-t border-gray-200 print:flex justify-between mt-4">
-                      <span>إجمالي الغائبين: {absenceData.length}</span>
                   </div>
               </div>
           )}
 
-          {/* COMMITTEES REPORT (HANDOVER) */}
-          {activeTab === 'COMMITTEES' && (
-              <div>
-                  <div className="p-6 bg-blue-50 border-b border-blue-100 print:hidden">
-                      <h3 className="text-lg font-bold text-blue-800 flex items-center gap-2">
-                          <Clock size={20} />
-                          جدول متابعة اللجان (بيان الاستلام)
-                      </h3>
+          {/* 2. ABSENCE REPORT */}
+          {activeTab === 'ABSENCE' && (
+              <div className="p-0">
+                  <div className="p-6 border-b bg-gray-50 flex justify-between items-center print:hidden">
+                      <div>
+                          <h3 className="font-bold text-lg text-gray-800">كشف الطلاب الغائبين ({absenceData.length})</h3>
+                          <p className="text-xs text-gray-500 mt-1">يجب تسليم هذا الكشف للمرشد الطلابي</p>
+                      </div>
+                      <button onClick={() => window.print()} className="bg-red-600 text-white hover:bg-red-700 px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 shadow-lg shadow-red-200">
+                          <Printer size={18} /> طباعة الكشف
+                      </button>
                   </div>
-                  {committeesData.length === 0 ? (
-                      <div className="p-12 text-center text-gray-500">لا توجد لجان مسجلة لهذا اليوم/الفترة</div>
-                  ) : (
-                      <>
-                        <table className="w-full text-right border-collapse">
-                            <thead className="bg-gray-50 text-gray-600 text-xs uppercase tracking-wider print:bg-gray-200 print:text-black">
-                                <tr>
-                                    <th className="p-3 border border-gray-300 w-16 text-center">اللجنة</th>
-                                    <th className="p-3 border border-gray-300">المادة / الصفوف</th>
-                                    <th className="p-3 border border-gray-300 text-center w-24">الطلاب</th>
-                                    <th className="p-3 border border-gray-300 text-center w-24">الحضور</th>
-                                    <th className="p-3 border border-gray-300 text-center w-24">غياب</th>
-                                    <th className="p-3 border border-gray-300">المعلم المستلم (المراقب)</th>
-                                    <th className="p-3 border border-gray-300">الحالة</th>
-                                    <th className="p-3 border border-gray-300 w-32 print:block hidden">توقيع المستلم</th>
-                                </tr>
-                            </thead>
-                            <tbody className="text-sm">
-                                {committeesData.map((exam, idx) => {
-                                    const teacher = teachers.find(t => t.id === exam.teacherId);
-                                    const teacherName = teacher ? teacher.name : (exam.teacherId || '-');
-                                    
-                                    const totalStudents = exam.students.length;
-                                    const absentCount = exam.attendance.filter(a => a.status === AttendanceStatus.ABSENT).length;
-                                    const presentCount = exam.attendance.filter(a => a.status === AttendanceStatus.PRESENT).length;
-
-                                    return (
-                                        <tr key={idx} className="hover:bg-gray-50">
-                                            <td className="p-3 border border-gray-300 font-bold font-mono text-center text-lg">{exam.committeeNumber}</td>
-                                            <td className="p-3 border border-gray-300">
-                                                <div className="font-bold">{exam.subject}</div>
-                                                <div className="text-xs text-gray-500">{exam.grades.join('، ')}</div>
-                                            </td>
-                                            <td className="p-3 border border-gray-300 text-center font-mono">{totalStudents}</td>
-                                            <td className="p-3 border border-gray-300 text-center font-mono text-green-700">{presentCount}</td>
-                                            <td className="p-3 border border-gray-300 text-center font-mono text-red-600">{absentCount > 0 ? absentCount : '-'}</td>
-                                            <td className="p-3 border border-gray-300 text-gray-800">{teacherName}</td>
-                                            <td className="p-3 border border-gray-300 text-xs">
-                                                {exam.status === EnvelopeStatus.PENDING && 'انتظار'}
-                                                {exam.status === EnvelopeStatus.RECEIVED && 'جاري الاختبار'}
-                                                {exam.status === EnvelopeStatus.COMPLETED && 'تم الجمع'}
-                                                {exam.status === EnvelopeStatus.DELIVERED && 'بالكنترول'}
-                                            </td>
-                                            <td className="p-3 border border-gray-300 print:table-cell hidden"></td>
-                                        </tr>
-                                    );
-                                })}
-                            </tbody>
-                        </table>
-                        
-                        {/* Print Footer Signature Area */}
-                        <div className="hidden print:flex mt-12 justify-between items-end px-12">
-                            <div className="text-center space-y-4">
-                                <p className="font-bold">عضو الكنترول المستلم</p>
-                                <p className="mt-4">........................................</p>
-                            </div>
-                            <div className="text-center space-y-4">
-                                <p className="font-bold">رئيس لجنة التحكم والضبط</p>
-                                <p className="mt-4">........................................</p>
-                            </div>
-                            <div className="text-center space-y-4">
-                                <p className="font-bold">مدير المدرسة</p>
-                                <p className="mt-4">........................................</p>
-                            </div>
-                        </div>
-                      </>
-                  )}
-              </div>
-          )}
-
-          {/* NOTIFICATIONS REPORT */}
-          {activeTab === 'NOTIFICATIONS' && (
-              <div>
-                  <div className="p-6 bg-purple-50 border-b border-purple-100 print:hidden">
-                      <h3 className="text-lg font-bold text-purple-800 flex items-center gap-2">
-                          <Bell size={20} />
-                          سجل التنبيهات والعمليات
-                      </h3>
-                  </div>
-                  <table className="w-full text-right border-collapse">
-                      <thead className="bg-gray-50 text-gray-600 text-xs uppercase tracking-wider print:bg-gray-200">
+                  <table className="w-full text-sm text-right print:text-black">
+                      <thead className="bg-gray-100 text-gray-600 font-bold border-b print:bg-gray-200 print:text-black print:border-black">
                           <tr>
-                              <th className="p-4 border border-gray-200">الوقت</th>
-                              <th className="p-4 border border-gray-200">النوع</th>
-                              <th className="p-4 border border-gray-200">العنوان</th>
-                              <th className="p-4 border border-gray-200">التفاصيل</th>
+                              <th className="p-4 border print:border-black">م</th>
+                              <th className="p-4 border print:border-black">الطالب</th>
+                              <th className="p-4 border print:border-black">الصف</th>
+                              <th className="p-4 border print:border-black">اللجنة</th>
+                              <th className="p-4 border print:border-black">المادة</th>
+                              <th className="p-4 border print:border-black w-40">ملاحظات</th>
                           </tr>
                       </thead>
-                      <tbody className="divide-y divide-gray-100 text-sm">
-                          {notificationsData.map((notif, idx) => (
+                      <tbody className="divide-y divide-gray-100 print:divide-black">
+                          {absenceData.length === 0 ? (
+                              <tr><td colSpan={6} className="p-16 text-center text-gray-400">لا يوجد غياب مسجل حتى الآن</td></tr>
+                          ) : (
+                              absenceData.map((row, idx) => (
+                                  <tr key={idx} className="hover:bg-red-50/50 transition-colors">
+                                      <td className="p-4 border print:border-black text-center w-12">{idx + 1}</td>
+                                      <td className="p-4 font-bold text-gray-800 border print:border-black">{row.studentName}</td>
+                                      <td className="p-4 text-gray-500 border print:border-black">{row.grade}</td>
+                                      <td className="p-4 font-mono text-blue-600 font-bold border print:border-black text-center">{row.committee}</td>
+                                      <td className="p-4 text-gray-600 border print:border-black">{row.examSubject}</td>
+                                      <td className="p-4 border print:border-black"></td>
+                                  </tr>
+                              ))
+                          )}
+                      </tbody>
+                  </table>
+              </div>
+          )}
+
+          {/* 3. NOTIFICATIONS */}
+          {activeTab === 'NOTIFICATIONS' && (
+              <div className="p-0">
+                  <div className="p-4 border-b bg-gray-50 print:hidden">
+                      <h3 className="font-bold text-gray-700">سجل الأحداث والتنبيهات (System Logs)</h3>
+                  </div>
+                  <table className="w-full text-sm text-right">
+                      <thead className="bg-gray-50 text-gray-500 font-bold border-b">
+                          <tr>
+                              <th className="p-4 w-32">الوقت</th>
+                              <th className="p-4 w-24">النوع</th>
+                              <th className="p-4">الرسالة</th>
+                          </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                          {notifications.map((notif, idx) => (
                               <tr key={idx} className="hover:bg-gray-50">
-                                  <td className="p-4 border border-gray-200 font-mono text-gray-500">
-                                      {new Date(notif.timestamp).toLocaleString('ar-SA')}
+                                  <td className="p-4 text-gray-400 dir-ltr font-mono text-xs">
+                                      {new Date(notif.timestamp).toLocaleTimeString('ar-SA')}
                                   </td>
-                                  <td className="p-4 border border-gray-200">
-                                      {notif.type === 'warning' ? 'تنبيه' : notif.type === 'success' ? 'نجاح' : 'معلومة'}
+                                  <td className="p-4">
+                                      {notif.type === 'warning' ? <span className="text-red-500 font-bold text-xs bg-red-50 px-2 py-1 rounded">تنبيه</span> : 
+                                       notif.type === 'success' ? <span className="text-green-500 font-bold text-xs bg-green-50 px-2 py-1 rounded">نجاح</span> : 
+                                       <span className="text-blue-500 font-bold text-xs bg-blue-50 px-2 py-1 rounded">نظام</span>}
                                   </td>
-                                  <td className="p-4 border border-gray-200 font-bold text-gray-800">{notif.title}</td>
-                                  <td className="p-4 border border-gray-200 text-gray-600">{notif.message}</td>
+                                  <td className="p-4 font-medium text-gray-700">{notif.message}</td>
                               </tr>
                           ))}
                       </tbody>
                   </table>
               </div>
           )}
+      </div>
+
+      {/* Footer Signatures (Print Only) */}
+      <div className="hidden print:flex justify-between items-end mt-20 px-12 text-center font-bold text-black">
+          <div>
+              <p className="mb-16">مسؤول الكنترول</p>
+              <p>................................</p>
+          </div>
+          <div>
+              <p className="mb-16">وكيل الشؤون التعليمية</p>
+              <p>................................</p>
+          </div>
+          <div>
+              <p className="mb-16">مدير المدرسة</p>
+              <p>................................</p>
+          </div>
       </div>
     </div>
   );
