@@ -10,23 +10,29 @@ import { StudentManagement } from './pages/admin/StudentManagement';
 import { Reports } from './pages/admin/Reports';
 import { CounselorDashboard } from './pages/counselor/CounselorDashboard';
 import { TeacherDashboard } from './pages/teacher/TeacherDashboard';
-import PrintCenter from './components/PrintCenter'; // تأكد أن المسار صحيح
+import PrintCenter from './components/PrintCenter';
 
 const AppContent: React.FC = () => {
   const { userRole, exams, students, teachers } = useApp();
   const [currentPage, setCurrentPage] = useState<string>('dashboard');
 
-  // إعادة توجيه الصفحة الافتراضية حسب الدور
   useEffect(() => {
     if (userRole === Role.MANAGER || userRole === Role.ADMIN) setCurrentPage('dashboard');
     if (userRole === Role.CONTROL) setCurrentPage('exams');
     if (userRole === Role.COUNSELOR) setCurrentPage('counselor_dashboard');
   }, [userRole]);
 
-  // --- المحول الذكي (The Adapter) ---
-  // يقوم بتحويل البيانات الحية من Firebase إلى تنسيق يفهمه مركز الطباعة
+  // ✅ تصحيح: محول البيانات لتفادي أخطاء TypeScript عند البناء
   const getPrintData = () => {
-      // استنتاج اللجان من المظاريف والطلاب
+      // 1. تحويل الطلاب ليتوافقوا مع مركز الطباعة (System 1 Format)
+      const mappedStudents = students.map(s => ({
+          ...s,
+          studentId: s.id,        // تحويل id -> studentId
+          class: s.className,     // تحويل className -> class
+          phone: s.parentPhone    // تحويل parentPhone -> phone
+      }));
+
+      // 2. استنتاج اللجان
       const uniqueCommittees = Array.from(new Set(
           [...exams.map(e => e.committeeNumber), ...students.map(s => s.committeeNumber)]
           .filter(Boolean)
@@ -36,15 +42,24 @@ const AppContent: React.FC = () => {
           id: idx + 1,
           name: String(num),
           location: exams.find(e => e.committeeNumber === num)?.location || '',
-          counts: {}, // لا يهم للأغراض الطباعية الحالية
+          counts: {}, 
           invigilatorCount: 1
       }));
 
-      // محاكاة المراحل (لأغراض الطباعة)
+      // 3. بناء المراحل
       const stagesData = [
-          { id: 1, name: 'أول ثانوي', prefix: '1', total: 0, students: students.filter(s => s.grade.includes('أول') || s.grade.includes('1')) },
-          { id: 2, name: 'ثاني ثانوي', prefix: '2', total: 0, students: students.filter(s => s.grade.includes('ثاني') || s.grade.includes('2')) },
-          { id: 3, name: 'ثالث ثانوي', prefix: '3', total: 0, students: students.filter(s => s.grade.includes('ثالث') || s.grade.includes('3')) },
+          { 
+              id: 1, name: 'أول ثانوي', prefix: '1', total: 0, 
+              students: mappedStudents.filter((s: any) => s.grade.includes('أول') || s.grade.includes('1')) 
+          },
+          { 
+              id: 2, name: 'ثاني ثانوي', prefix: '2', total: 0, 
+              students: mappedStudents.filter((s: any) => s.grade.includes('ثاني') || s.grade.includes('2')) 
+          },
+          { 
+              id: 3, name: 'ثالث ثانوي', prefix: '3', total: 0, 
+              students: mappedStudents.filter((s: any) => s.grade.includes('ثالث') || s.grade.includes('3')) 
+          },
       ];
 
       return {
@@ -52,7 +67,7 @@ const AppContent: React.FC = () => {
           stages: stagesData,
           committees: committeesData,
           teachers: teachers,
-          schedule: undefined // يمكن إضافته لاحقاً إذا لزم الأمر
+          schedule: undefined 
       };
   };
 
@@ -60,22 +75,16 @@ const AppContent: React.FC = () => {
   if (userRole === Role.TEACHER) return <TeacherDashboard />;
 
   const renderPage = () => {
-    const commonProps = {
-        // أي خصائص مشتركة
-    };
-
     switch (currentPage) {
         case 'dashboard': return <AdminDashboard />;
-        
-        // هنا تم إضافة صفحة الطباعة مع تمرير البيانات المحولة
-        case 'print': return <PrintCenter data={getPrintData()} onUpdateSchool={() => {}} />;
-        
+        // ✅ تمرير البيانات المصححة لمركز الطباعة
+        case 'print': return <PrintCenter data={getPrintData() as any} onUpdateSchool={() => {}} />;
         case 'exams': return <ExamManagement />;
         case 'teachers': return <TeacherManagement />;
         case 'students': return <StudentManagement />;
         case 'reports': return <Reports />;
         case 'counselor_dashboard': return <CounselorDashboard />;
-        default: return <ExamManagement />; // صفحة افتراضية للكنترول
+        default: return <ExamManagement />;
     }
   };
 
