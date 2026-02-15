@@ -20,16 +20,14 @@ interface AppContextType {
   currentUser: Teacher | null; // Store logged in teacher data
   exams: ExamEnvelope[];
   teachers: Teacher[];
-  students: Student[]; // Master list of students
+  students: Student[]; // NEW: Master list of students
   notifications: Notification[];
   activeExamId: string | null;
   
   // Actions
-  // تم التعديل: الدالة الآن تطلب رقم الجوال وتعيد كائن تفاصيل النجاح/الفشل
-  loginTeacher: (teacherId: string, phone: string) => Promise<{success: boolean, message?: string}>;
-  
+  loginTeacher: (teacherId: string) => Promise<boolean>;
   processCommitteeScan: (committeeNumber: string, teacherId: string) => Promise<{success: boolean, message?: string}>;
-  processAdminDeliveryScan: (committeeNumber: string) => Promise<{success: boolean, message?: string}>;
+  processAdminDeliveryScan: (committeeNumber: string) => Promise<{success: boolean, message?: string}>; // NEW
   scanEnvelope: (examId: string, teacherId: string) => Promise<void>;
   markAttendance: (examId: string, studentId: string, status: AttendanceStatus) => Promise<void>;
   submitEnvelope: (examId: string) => Promise<void>;
@@ -61,6 +59,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       (snapshot) => {
         const teachersData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Teacher));
         setTeachers(teachersData);
+        // تتبع عدد المعلمين المحملين
+        console.log(`[System] تم تحميل ${teachersData.length} معلم محلياً.`);
       },
       (error) => {
         console.warn("Teachers sync error:", error instanceof Error ? error.message : String(error));
@@ -127,46 +127,38 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
-  // --- دالة تسجيل الدخول الجديدة (تم التعديل هنا) ---
-  const loginTeacher = async (teacherId: string, phone: string): Promise<{success: boolean, message?: string}> => {
+  // --- (المعدل) دالة تسجيل الدخول مع التتبع ---
+  const loginTeacher = async (teacherId: string): Promise<boolean> => {
+    console.log("1. [Login] بدء محاولة الدخول للرقم:", teacherId);
+    
     try {
-      // 1. تنظيف والتحقق من رقم الجوال
-      const cleanPhone = phone.trim();
+      // 1. المحاولة الأولى: البحث في البيانات المحلية (سريع جداً)
+      const localTeacher = teachers.find(t => t.id === teacherId);
+      if (localTeacher) {
+        console.log("2. [Login] ✅ تم العثور على المعلم في الذاكرة المحلية.");
+        setCurrentUser(localTeacher);
+        setUserRole(Role.TEACHER);
+        return true;
+      }
+
+      // 2. المحاولة الثانية: البحث في السحابة (أبطأ - يعتمد على النت)
+      console.log("2. [Login] ⚠️ المعلم غير موجود محلياً، جاري الاتصال بـ Firebase...");
+      const docRef = doc(db, 'teachers', teacherId);
+      const docSnap = await getDoc(docRef);
       
-      // التحقق: يجب أن يبدأ بـ 05 ويكون 10 أرقام
-      if (!cleanPhone.startsWith('05') || cleanPhone.length !== 10) {
-          return { success: false, message: "رقم الجوال يجب أن يبدأ بـ 05 ويتكون من 10 أرقام." };
-      }
-
-      // 2. البحث عن المعلم (محلياً أولاً للسرعة)
-      let targetTeacher = teachers.find(t => t.id === teacherId);
-
-      // 3. إذا لم يوجد محلياً، نبحث في السحابة (Firebase)
-      if (!targetTeacher) {
-          const docRef = doc(db, 'teachers', teacherId);
-          const docSnap = await getDoc(docRef);
-          if (docSnap.exists()) {
-              targetTeacher = { id: docSnap.id, ...docSnap.data() } as Teacher;
-          }
-      }
-
-      // 4. التحقق من البيانات
-      if (targetTeacher) {
-          // هل رقم الجوال مطابق؟
-          if (targetTeacher.phone === cleanPhone) {
-              setCurrentUser(targetTeacher);
-              setUserRole(Role.TEACHER);
-              return { success: true };
-          } else {
-              return { success: false, message: "رقم الجوال غير مطابق لسجلات هذا المعلم." };
-          }
+      if (docSnap.exists()) {
+        console.log("3. [Login] ✅ تم العثور على المعلم في السحابة.");
+        const teacherData = { id: docSnap.id, ...docSnap.data() } as Teacher;
+        setCurrentUser(teacherData);
+        setUserRole(Role.TEACHER);
+        return true;
       } else {
-          return { success: false, message: "رقم المعلم غير موجود." };
+        console.log("3. [Login] ❌ الرقم غير موجود في السحابة أيضاً.");
+        return false;
       }
-
     } catch (error: any) {
-      console.error("Login error:", error?.message || "Unknown error");
-      return { success: false, message: "حدث خطأ أثناء تسجيل الدخول." };
+      console.error("4. [Login] ❌ خطأ فادح أثناء الاتصال:", error?.message || "Unknown error");
+      return false;
     }
   };
 
@@ -312,13 +304,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
-  // Process Committee Scan
+  // NEW LOGIC: Scan by Committee Number (Relaxed for Testing)
   const processCommitteeScan = async (committeeNumber: string, teacherId: string): Promise<{success: boolean, message?: string}> => {
     try {
         const today = new Date().toISOString().split('T')[0];
         const now = new Date();
         const currentTime = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
 
+        // 1. Get all pending/active exams for this committee (ignoring date initially to allow testing fallback)
         let availableExams = exams.filter(e => 
             e.committeeNumber === committeeNumber && 
             e.status !== EnvelopeStatus.COMPLETED &&
@@ -329,18 +322,23 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             return { success: false, message: `لا توجد اختبارات نشطة أو قيد الانتظار لهذه اللجنة` };
         }
 
+        // 2. Logic to pick the "Best" exam to open
         let targetExam: ExamEnvelope | undefined;
 
+        // Priority A: Matches Today AND Time (Production Logic)
         targetExam = availableExams.find(e => 
             e.date === today && 
             currentTime >= e.startTime && 
             currentTime <= e.endTime
         );
 
+        // Priority B: Matches Today (Any time - e.g. early or late start)
         if (!targetExam) {
              targetExam = availableExams.find(e => e.date === today);
         }
 
+        // Priority C: Fallback to the first available exam (For testing purposes regardless of date/time)
+        // This ensures the demo works even if the schedule was generated for yesterday/tomorrow.
         if (!targetExam) {
             targetExam = availableExams[0];
         }
@@ -359,10 +357,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
+  // NEW: Process Admin/Control Delivery Scan
   const processAdminDeliveryScan = async (committeeNumber: string): Promise<{success: boolean, message?: string}> => {
     try {
         const today = new Date().toISOString().split('T')[0];
 
+        // Find exams for this committee TODAY that are marked COMPLETED (Teacher finished them)
         const completedExams = exams.filter(e => 
             e.committeeNumber === committeeNumber && 
             e.date === today &&
@@ -370,6 +370,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         );
 
         if (completedExams.length === 0) {
+             // Check if already delivered
              const delivered = exams.some(e => 
                 e.committeeNumber === committeeNumber && 
                 e.date === today && 
@@ -383,6 +384,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             return { success: false, message: 'لم يتم إنهاء الاختبار من قبل المعلم بعد، أو لا يوجد اختبار اليوم.' };
         }
 
+        // Mark all completed exams for this committee today as DELIVERED
         for (const exam of completedExams) {
             await deliverEnvelopeToControl(exam.id);
         }
@@ -431,6 +433,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         if (status === AttendanceStatus.ABSENT) {
             const student = exam.students.find(s => s.id === studentId);
             if(student) {
+                // Notifying Counselor specially
                 sendNotification(
                     'تنبيه غياب', 
                     `الطالب ${student.name} غائب عن اختبار ${exam.subject}`, 
@@ -481,7 +484,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       activeExamId,
       loginTeacher,
       processCommitteeScan,
-      processAdminDeliveryScan,
+      processAdminDeliveryScan, // Export new function
       scanEnvelope,
       markAttendance,
       submitEnvelope,
