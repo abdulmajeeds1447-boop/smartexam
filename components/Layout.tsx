@@ -24,7 +24,7 @@ interface LayoutProps {
   currentPage: string;
 }
 
-// ✅ تصحيح: تعريف المكون خارج الدالة الرئيسية وبحرف كبير
+// ✅ التصحيح: يجب أن يبدأ اسم المكون بحرف كبير (PascalCase)
 const ItemIconForHeader = ({ id, items }: { id: string, items: any[] }) => {
     const item = items.find(i => i.id === id);
     if (!item) return <School size={20} className="text-blue-600" />;
@@ -44,6 +44,8 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentPag
 
   const getMenuItems = () => {
     const items = [];
+    
+    // القوائم حسب الصلاحيات
     if (userRole !== Role.TEACHER) {
         items.push({ id: 'dashboard', label: 'الرئيسية', icon: LayoutDashboard });
     }
@@ -74,7 +76,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentPag
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col md:flex-row font-sans text-right" dir="rtl">
       
-      {/* DESKTOP SIDEBAR */}
+      {/* 1. DESKTOP SIDEBAR */}
       <aside className="hidden md:flex flex-col w-72 bg-slate-900 text-white min-h-screen fixed right-0 top-0 bottom-0 z-50 shadow-2xl transition-all duration-300 border-l border-slate-800">
         <div className="p-8 border-b border-slate-800/50 flex items-center gap-3">
           <div className="bg-gradient-to-br from-blue-600 to-blue-800 p-2.5 rounded-xl shadow-lg shadow-blue-900/20">
@@ -82,7 +84,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentPag
           </div>
           <div>
             <h1 className="text-lg font-bold tracking-wide">النظام الذكي</h1>
-            <p className="text-[10px] text-slate-400 font-medium opacity-80">الإصدار 3.0</p>
+            <p className="text-[10px] text-slate-400 font-medium opacity-80">الإصدار الاحترافي 3.0</p>
           </div>
         </div>
 
@@ -132,7 +134,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentPag
         </div>
       </aside>
 
-      {/* MAIN CONTENT */}
+      {/* 2. MAIN CONTENT */}
       <main className="flex-1 md:mr-72 pb-28 md:pb-0 transition-all duration-300 min-w-0 flex flex-col min-h-screen">
         <header className="md:hidden bg-white/90 backdrop-blur-xl px-5 py-4 shadow-sm flex justify-between items-center sticky top-0 z-40 border-b border-gray-100 transition-all">
             <div className="flex items-center gap-3">
@@ -158,7 +160,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentPag
         </div>
       </main>
 
-      {/* MOBILE NAV */}
+      {/* 3. MOBILE NAV */}
       <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 pb-safe z-50 shadow-[0_-8px_30px_rgba(0,0,0,0.04)] rounded-t-[1.5rem]">
         <div className="flex justify-around items-center h-20 px-2 relative">
           {mainMobileItems.map((item) => {
@@ -192,7 +194,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentPag
         </div>
       </div>
 
-      {/* MOBILE MENU DRAWER */}
+      {/* 4. MOBILE DRAWER */}
       {showMobileMenu && (
           <div className="fixed inset-0 z-[60] md:hidden flex items-end justify-center">
               <div 
