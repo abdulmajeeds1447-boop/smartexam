@@ -10,14 +10,11 @@ import {
   ClipboardList,
   HeartHandshake,
   QrCode,
-  Menu,
   X,
   Grid,
-  Settings,
   GraduationCap,
   Printer,
   Bell,
-  ChevronRight,
   UserCircle
 } from 'lucide-react';
 
@@ -27,88 +24,68 @@ interface LayoutProps {
   currentPage: string;
 }
 
+// ✅ تصحيح: تعريف المكون خارج الدالة الرئيسية وبحرف كبير
+const ItemIconForHeader = ({ id, items }: { id: string, items: any[] }) => {
+    const item = items.find(i => i.id === id);
+    if (!item) return <School size={20} className="text-blue-600" />;
+    const Icon = item.icon;
+    return <Icon size={20} className="text-blue-600" />;
+};
+
 export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentPage }) => {
   const { userRole, setUserRole, currentUser, notifications } = useApp();
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
 
-  // تحديث عدد التنبيهات غير المقروءة
   useEffect(() => {
     const count = notifications.filter(n => !n.read).length;
     setUnreadCount(count);
   }, [notifications]);
 
-  // --- 1. تعريف القائمة الشاملة (The Master Menu) ---
   const getMenuItems = () => {
     const items = [];
-    
-    // --- لوحة المعلومات (للجميع عدا المعلم) ---
     if (userRole !== Role.TEACHER) {
-        items.push({ id: 'dashboard', label: 'الرئيسية', icon: LayoutDashboard, section: 'main' });
+        items.push({ id: 'dashboard', label: 'الرئيسية', icon: LayoutDashboard });
     }
-
-    // --- صلاحيات المدير (Manager / Admin) ---
     if (userRole === Role.ADMIN || userRole === Role.MANAGER) {
-      items.push({ id: 'reports', label: 'التقارير والإحصائيات', icon: FileText, section: 'admin' });
+      items.push({ id: 'reports', label: 'التقارير', icon: FileText });
     }
-
-    // --- صلاحيات الكنترول (Control / Admin) ---
     if (userRole === Role.ADMIN || userRole === Role.CONTROL) {
-      items.push({ id: 'exams', label: 'غرفة الكنترول', icon: ClipboardList, section: 'control' });
-      items.push({ id: 'print', label: 'مركز الطباعة', icon: Printer, section: 'control' }); // تمت إضافته
-      items.push({ id: 'teachers', label: 'إدارة المعلمين', icon: Users, section: 'data' });
-      items.push({ id: 'students', label: 'إدارة الطلاب', icon: GraduationCap, section: 'data' });
+      items.push({ id: 'exams', label: 'الكنترول', icon: ClipboardList });
+      items.push({ id: 'print', label: 'الطباعة', icon: Printer });
+      items.push({ id: 'teachers', label: 'المعلمين', icon: Users });
+      items.push({ id: 'students', label: 'الطلاب', icon: GraduationCap });
     }
-
-    // --- صلاحيات المرشد (Counselor / Admin) ---
     if (userRole === Role.COUNSELOR || userRole === Role.ADMIN) {
-        items.push({ id: 'counselor_dashboard', label: 'المتابعة الطلابية', icon: HeartHandshake, section: 'counselor' });
+        items.push({ id: 'counselor_dashboard', label: 'المتابعة', icon: HeartHandshake });
     }
-
-    // --- صلاحيات المعلم (Teacher) ---
     if (userRole === Role.TEACHER) {
-        items.push({ id: 'scanner', label: 'ماسح الرموز', icon: QrCode, section: 'teacher' });
-        items.push({ id: 'session', label: 'اللجنة الحالية', icon: FileText, section: 'teacher' });
+        items.push({ id: 'scanner', label: 'مسح QR', icon: QrCode });
+        items.push({ id: 'session', label: 'اللجنة', icon: FileText });
     }
-
-    // --- عناصر مشتركة (Settings) ---
-    if (userRole === Role.ADMIN) {
-       // items.push({ id: 'settings', label: 'الإعدادات', icon: Settings, section: 'system' });
-    }
-
     return items;
   };
 
   const menuItems = getMenuItems();
-
-  // --- منطق تقسيم القوائم للجوال ---
-  // نأخذ أول 4 عناصر للشريط السفلي، والباقي نضعه في قائمة "المزيد"
   const mainMobileItems = menuItems.slice(0, 4);
   const moreMobileItems = menuItems.slice(4);
-
-  // الحصول على عنوان الصفحة الحالية للهيدر
   const currentPageLabel = menuItems.find(i => i.id === currentPage)?.label || 'النظام الذكي';
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col md:flex-row font-sans text-right" dir="rtl">
       
-      {/* ================================================================================= */}
-      {/* 1. DESKTOP SIDEBAR (القائمة الجانبية للكمبيوتر)                                     */}
-      {/* ================================================================================= */}
+      {/* DESKTOP SIDEBAR */}
       <aside className="hidden md:flex flex-col w-72 bg-slate-900 text-white min-h-screen fixed right-0 top-0 bottom-0 z-50 shadow-2xl transition-all duration-300 border-l border-slate-800">
-        
-        {/* Logo Area */}
         <div className="p-8 border-b border-slate-800/50 flex items-center gap-3">
           <div className="bg-gradient-to-br from-blue-600 to-blue-800 p-2.5 rounded-xl shadow-lg shadow-blue-900/20">
             <School className="text-white w-6 h-6" />
           </div>
           <div>
             <h1 className="text-lg font-bold tracking-wide">النظام الذكي</h1>
-            <p className="text-[10px] text-slate-400 font-medium opacity-80">الإصدار الاحترافي 3.0</p>
+            <p className="text-[10px] text-slate-400 font-medium opacity-80">الإصدار 3.0</p>
           </div>
         </div>
 
-        {/* User Info Card */}
         <div className="px-6 pt-6 pb-2">
             <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700/50 flex items-center gap-3">
                 <div className="bg-slate-700 p-2 rounded-full">
@@ -121,7 +98,6 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentPag
             </div>
         </div>
         
-        {/* Navigation Items */}
         <nav className="flex-1 px-4 py-4 space-y-1.5 overflow-y-auto custom-scrollbar">
           {menuItems.map((item) => {
             const isActive = currentPage === item.id;
@@ -145,36 +121,30 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentPag
           })}
         </nav>
 
-        {/* Logout Button */}
         <div className="p-6 border-t border-slate-800/50 bg-slate-900/50 backdrop-blur-sm">
           <button 
             onClick={() => setUserRole(null)}
             className="w-full flex items-center justify-center gap-2 text-red-400 bg-red-500/10 hover:bg-red-500 hover:text-white px-5 py-3 rounded-xl transition-all duration-200 font-bold group"
           >
             <LogOut size={18} className="group-hover:-translate-x-1 transition-transform" />
-            <span>تسجيل الخروج</span>
+            <span>خروج</span>
           </button>
         </div>
       </aside>
 
-
-      {/* ================================================================================= */}
-      {/* 2. MAIN CONTENT AREA (منطقة المحتوى الرئيسية)                                       */}
-      {/* ================================================================================= */}
+      {/* MAIN CONTENT */}
       <main className="flex-1 md:mr-72 pb-28 md:pb-0 transition-all duration-300 min-w-0 flex flex-col min-h-screen">
-        
-        {/* Mobile Top Header (للموبايل فقط) */}
         <header className="md:hidden bg-white/90 backdrop-blur-xl px-5 py-4 shadow-sm flex justify-between items-center sticky top-0 z-40 border-b border-gray-100 transition-all">
             <div className="flex items-center gap-3">
                 <div className="bg-slate-50 p-2 rounded-full border border-slate-100">
-                    <itemIconForHeader id={currentPage} items={menuItems} />
+                    {/* ✅ استخدام المكون المصحح */}
+                    <ItemIconForHeader id={currentPage} items={menuItems} />
                 </div>
                 <div>
                     <h2 className="font-black text-lg text-slate-800 leading-tight">{currentPageLabel}</h2>
                     <p className="text-[10px] text-slate-500 font-bold mt-0.5">{currentUser?.name}</p>
                 </div>
             </div>
-            
             <div className="flex items-center gap-2">
                 <button className="relative p-2 text-slate-400 hover:text-slate-600 transition-colors">
                     <Bell size={20} />
@@ -183,20 +153,14 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentPag
             </div>
         </header>
 
-        {/* Page Content Render */}
         <div className="flex-1 p-4 md:p-8 max-w-7xl mx-auto w-full animate-fade-in">
             {children}
         </div>
       </main>
 
-
-      {/* ================================================================================= */}
-      {/* 3. MOBILE BOTTOM NAVIGATION (شريط التنقل السفلي - للجوال فقط)                       */}
-      {/* ================================================================================= */}
+      {/* MOBILE NAV */}
       <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 pb-safe z-50 shadow-[0_-8px_30px_rgba(0,0,0,0.04)] rounded-t-[1.5rem]">
         <div className="flex justify-around items-center h-20 px-2 relative">
-          
-          {/* Main Items */}
           {mainMobileItems.map((item) => {
             const isActive = currentPage === item.id;
             return (
@@ -214,8 +178,6 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentPag
                 </button>
             );
           })}
-
-          {/* "More" Button (زر المزيد) */}
           {moreMobileItems.length > 0 && (
               <button
                 onClick={() => setShowMobileMenu(true)}
@@ -230,23 +192,15 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentPag
         </div>
       </div>
 
-
-      {/* ================================================================================= */}
-      {/* 4. MOBILE DRAWER (القائمة المنبثقة للجوال)                                          */}
-      {/* ================================================================================= */}
+      {/* MOBILE MENU DRAWER */}
       {showMobileMenu && (
           <div className="fixed inset-0 z-[60] md:hidden flex items-end justify-center">
-              {/* Backdrop */}
               <div 
                 className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity animate-fade-in"
                 onClick={() => setShowMobileMenu(false)}
               ></div>
-
-              {/* Drawer Content */}
               <div className="bg-white w-full rounded-t-[2.5rem] p-6 relative z-10 animate-slide-up shadow-2xl max-h-[75vh] overflow-y-auto flex flex-col">
-                  {/* Handle */}
                   <div className="w-12 h-1.5 bg-gray-200 rounded-full mx-auto mb-8"></div>
-                  
                   <div className="flex justify-between items-center mb-8">
                       <div>
                           <h3 className="text-xl font-black text-slate-800">قائمة الخدمات</h3>
@@ -254,8 +208,6 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentPag
                       </div>
                       <button onClick={() => setShowMobileMenu(false)} className="bg-gray-100 p-2.5 rounded-full hover:bg-gray-200 transition text-gray-600"><X size={20}/></button>
                   </div>
-
-                  {/* Grid of Extra Items */}
                   <div className="grid grid-cols-2 gap-4 mb-8 flex-1">
                       {moreMobileItems.map((item) => (
                           <button 
@@ -274,8 +226,6 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentPag
                           </button>
                       ))}
                   </div>
-
-                  {/* Logout Action */}
                   <div className="border-t border-gray-100 pt-6 mt-auto">
                       <button 
                         onClick={() => { setUserRole(null); setShowMobileMenu(false); }}
@@ -288,15 +238,6 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentPag
               </div>
           </div>
       )}
-
     </div>
   );
-};
-
-// Helper Component for Dynamic Header Icon
-const itemIconForHeader = ({ id, items }: { id: string, items: any[] }) => {
-    const item = items.find(i => i.id === id);
-    if (!item) return <School size={20} className="text-blue-600" />;
-    const Icon = item.icon;
-    return <Icon size={20} className="text-blue-600" />;
 };
