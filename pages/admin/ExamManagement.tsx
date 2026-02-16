@@ -26,12 +26,12 @@ export const ExamManagement: React.FC = () => {
   const [cloudSchedule, setCloudSchedule] = useState<any | null>(null);
   const [cloudCommitteesConfig, setCloudCommitteesConfig] = useState<Record<string, any>>({});
 
-  // ✅ [FIX] تجميد الشاشة الخلفية عند فتح أي نافذة لمنع الانزلاق على الجوال
+  // ✅ [FIX] تجميد الخلفية مع السماح للنافذة بالتحرك
   useEffect(() => {
     if (showReceiveScanner || selectedCommittee || showWizard || showDeleteModal) {
-        document.body.style.overflow = 'hidden'; // قفل الحركة
+        document.body.style.overflow = 'hidden'; 
     } else {
-        document.body.style.overflow = 'unset';  // استعادة الحركة
+        document.body.style.overflow = 'unset';  
     }
     return () => { document.body.style.overflow = 'unset'; }
   }, [showReceiveScanner, selectedCommittee, showWizard, showDeleteModal]);
@@ -270,69 +270,96 @@ export const ExamManagement: React.FC = () => {
         })}
       </div>
 
-      {/* ✅ مودال الاستلام بالماسح (Control Scanner Modal) */}
+      {/* ✅ مودال الاستلام بالماسح (تم تعديله ليقبل التمرير) */}
       {showReceiveScanner && (
-        <div className="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-4 backdrop-blur-md animate-fade-in">
-            <div className="bg-white rounded-[2.5rem] w-full max-w-md overflow-hidden relative shadow-2xl border border-white/20">
-                <button onClick={() => setShowReceiveScanner(false)} className="absolute top-4 left-4 z-20 bg-white/20 hover:bg-white/40 p-2 rounded-full text-white backdrop-blur-md transition"><X size={24}/></button>
-                <div className="h-[400px]">
-                    <Scanner 
-                        onScanSuccess={() => { setTimeout(() => setShowReceiveScanner(false), 1500); }}
-                        customProcessor={processAdminDeliveryScan}
-                    />
-                </div>
-                <div className="bg-slate-900 text-white p-6 text-center">
-                    <h3 className="text-xl font-bold mb-1">وضع الاستلام</h3>
-                    <p className="text-slate-400 text-sm">امسح كود المظروف لتأكيد استلامه</p>
+        <div className="fixed inset-0 z-[100] overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+            <div className="flex min-h-full items-center justify-center p-4 text-center sm:p-0">
+                {/* الخلفية */}
+                <div className="fixed inset-0 bg-black/90 transition-opacity" aria-hidden="true" onClick={() => setShowReceiveScanner(false)}></div>
+
+                {/* النافذة */}
+                <div className="relative transform overflow-hidden rounded-[2.5rem] bg-white text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-md border border-white/10">
+                    <button onClick={() => setShowReceiveScanner(false)} className="absolute top-4 left-4 z-20 bg-white/20 hover:bg-white/40 p-2 rounded-full text-white backdrop-blur-md transition"><X size={24}/></button>
+                    <div className="h-[400px] sm:h-[500px]">
+                        <Scanner 
+                            onScanSuccess={() => { setTimeout(() => setShowReceiveScanner(false), 1500); }}
+                            customProcessor={processAdminDeliveryScan}
+                        />
+                    </div>
+                    <div className="bg-slate-900 text-white p-6 text-center">
+                        <h3 className="text-xl font-bold mb-1">وضع الاستلام</h3>
+                        <p className="text-slate-400 text-sm">امسح كود المظروف لتأكيد استلامه</p>
+                    </div>
                 </div>
             </div>
         </div>
       )}
 
-      {/* ✅ مودال QR الخاص باللجنة */}
+      {/* ✅ مودال QR الخاص باللجنة (تم تعديله ليقبل التمرير) */}
       {selectedCommittee && (
-        <div className="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
-          <div className="bg-white rounded-[2rem] p-8 text-center max-w-sm w-full relative shadow-2xl animate-scale-in">
-             <button onClick={() => setSelectedCommittee(null)} className="absolute top-4 left-4 p-2 bg-gray-100 rounded-full hover:bg-gray-200 transition"><X size={20}/></button>
-             <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">رقم اللجنة</span>
-             <h3 className="text-6xl font-black mb-4 text-slate-800">{selectedCommittee.number}</h3>
-             <div className="bg-gray-50 px-4 py-2 rounded-xl text-gray-600 font-bold mb-6 inline-flex items-center gap-2"><MapPin size={16} className="text-red-500" />{selectedCommittee.location}</div>
-             <div className="border-4 border-slate-900 p-4 rounded-3xl inline-block mb-8 bg-white shadow-xl">
-                <QRCodeCanvas id="committee-qr" value={JSON.stringify({ type: 'committee', id: selectedCommittee.number })} size={200} />
+        <div className="fixed inset-0 z-[100] overflow-y-auto">
+          <div className="flex min-h-full items-center justify-center p-4 text-center sm:p-0">
+             <div className="fixed inset-0 bg-black/90 transition-opacity" onClick={() => setSelectedCommittee(null)}></div>
+             <div className="relative transform overflow-hidden rounded-[2rem] bg-white p-8 text-center shadow-2xl transition-all sm:my-8 sm:w-full sm:max-w-sm">
+                 <button onClick={() => setSelectedCommittee(null)} className="absolute top-4 left-4 p-2 bg-gray-100 rounded-full hover:bg-gray-200 transition"><X size={20}/></button>
+                 <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">رقم اللجنة</span>
+                 <h3 className="text-6xl font-black mb-4 text-slate-800">{selectedCommittee.number}</h3>
+                 <div className="bg-gray-50 px-4 py-2 rounded-xl text-gray-600 font-bold mb-6 inline-flex items-center gap-2"><MapPin size={16} className="text-red-500" />{selectedCommittee.location}</div>
+                 <div className="border-4 border-slate-900 p-4 rounded-3xl inline-block mb-8 bg-white shadow-xl">
+                    <QRCodeCanvas id="committee-qr" value={JSON.stringify({ type: 'committee', id: selectedCommittee.number })} size={200} />
+                 </div>
+                 <button onClick={handlePrintSticker} className="w-full bg-slate-900 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-3 hover:bg-slate-800 transition-all shadow-xl">
+                     <Printer size={20}/> طباعة الملصق التعريفي
+                 </button>
              </div>
-             
-             <button onClick={handlePrintSticker} className="w-full bg-slate-900 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-3 hover:bg-slate-800 transition-all shadow-xl">
-                 <Printer size={20}/> طباعة الملصق التعريفي
-             </button>
           </div>
         </div>
       )}
 
-      {/* Wizard Modal */}
+      {/* Wizard Modal (تم تعديله) */}
       {showWizard && (
-          <div className="fixed inset-0 bg-black/80 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
-              <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl animate-scale-in overflow-hidden">
-                  <div className="bg-slate-900 p-8 text-white relative overflow-hidden">
-                      <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full blur-2xl -translate-y-10 translate-x-10"></div>
-                      <h3 className="font-bold text-2xl flex items-center gap-3 relative z-10"><Database className="text-green-400" /> مراجعة البيانات</h3>
-                  </div>
-                  <div className="p-8 space-y-6">
-                      <button onClick={handleGenerateFromCloud} className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold text-lg hover:bg-blue-700 shadow-xl shadow-blue-200 flex items-center justify-center gap-2 active:scale-95 transition-all">
-                          <Sparkles size={20} className="text-yellow-300" /> تنفيذ التوزيع
-                      </button>
+          <div className="fixed inset-0 z-[100] overflow-y-auto">
+              <div className="flex min-h-full items-center justify-center p-4 text-center sm:p-0">
+                  <div className="fixed inset-0 bg-black/80 backdrop-blur-sm transition-opacity" onClick={() => setShowWizard(false)}></div>
+                  <div className="relative transform overflow-hidden rounded-3xl bg-white text-left shadow-2xl transition-all sm:my-8 sm:w-full sm:max-w-lg">
+                      <div className="bg-slate-900 p-8 text-white relative overflow-hidden">
+                          <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full blur-2xl -translate-y-10 translate-x-10"></div>
+                          <h3 className="font-bold text-2xl flex items-center gap-3 relative z-10"><Database className="text-green-400" /> مراجعة البيانات</h3>
+                          <p className="text-slate-400 text-sm mt-2 relative z-10">تأكيد استيراد الجدول وتوزيع الطلاب من النظام الأول</p>
+                      </div>
+                      <div className="p-8 space-y-6">
+                          <div className="space-y-4">
+                              <div className="flex justify-between items-center p-4 bg-gray-50 rounded-2xl border border-gray-100">
+                                  <span className="text-gray-500 font-bold text-sm">أيام الاختبارات</span>
+                                  <span className="text-xl font-black text-slate-800">{cloudSchedule?.days.length} أيام</span>
+                              </div>
+                              <div className="flex justify-between items-center p-4 bg-gray-50 rounded-2xl border border-gray-100">
+                                  <span className="text-gray-500 font-bold text-sm">عدد اللجان</span>
+                                  <span className="text-xl font-black text-slate-800">{Object.keys(cloudCommitteesConfig).length} لجنة</span>
+                              </div>
+                          </div>
+                          <button onClick={handleGenerateFromCloud} className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold text-lg hover:bg-blue-700 shadow-xl shadow-blue-200 flex items-center justify-center gap-2 active:scale-95 transition-all">
+                              <Sparkles size={20} className="text-yellow-300" /> تنفيذ التوزيع
+                          </button>
+                      </div>
                   </div>
               </div>
           </div>
       )}
 
+       {/* Delete Modal (تم تعديله) */}
        {showDeleteModal && (
-          <div className="fixed inset-0 bg-black/80 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
-              <div className="bg-white rounded-[2rem] p-8 max-w-sm w-full text-center shadow-2xl animate-scale-in">
-                  <div className="bg-red-50 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 text-red-500 border-4 border-red-100"><Trash2 size={36} /></div>
-                  <h3 className="text-2xl font-black text-slate-800 mb-2">تصفير النظام؟</h3>
-                  <div className="flex gap-3">
-                      <button onClick={() => setShowDeleteModal(false)} className="flex-1 bg-gray-100 py-3 rounded-2xl font-bold text-gray-600 hover:bg-gray-200 transition">إلغاء</button>
-                      <button onClick={() => { clearAllExams(); setShowDeleteModal(false); }} className="flex-1 bg-red-600 text-white py-3 rounded-2xl font-bold hover:bg-red-700 shadow-xl shadow-red-200 transition">نعم، مسح</button>
+          <div className="fixed inset-0 z-[100] overflow-y-auto">
+              <div className="flex min-h-full items-center justify-center p-4 text-center sm:p-0">
+                  <div className="fixed inset-0 bg-black/60 backdrop-blur-sm transition-opacity" onClick={() => setShowDeleteModal(false)}></div>
+                  <div className="relative transform overflow-hidden rounded-[2rem] bg-white p-8 text-center shadow-2xl transition-all sm:my-8 sm:w-full sm:max-w-sm">
+                      <div className="bg-red-50 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 text-red-500 border-4 border-red-100"><Trash2 size={36} /></div>
+                      <h3 className="text-2xl font-black text-slate-800 mb-2">تصفير النظام؟</h3>
+                      <p className="text-gray-500 text-sm mb-8 leading-relaxed font-medium">سيتم حذف جميع المظاريف والجدول الحالي.<br/>هذا الإجراء لا يمكن التراجع عنه.</p>
+                      <div className="flex gap-3">
+                          <button onClick={() => setShowDeleteModal(false)} className="flex-1 bg-gray-100 py-3 rounded-2xl font-bold text-gray-600 hover:bg-gray-200 transition">إلغاء</button>
+                          <button onClick={() => { clearAllExams(); setShowDeleteModal(false); }} className="flex-1 bg-red-600 text-white py-3 rounded-2xl font-bold hover:bg-red-700 shadow-xl shadow-red-200 transition">نعم، مسح</button>
+                      </div>
                   </div>
               </div>
           </div>
