@@ -16,11 +16,11 @@ const createPrintPage = (title: string, content: string, settings: PrintSettings
       <style>
         @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;900&display=swap');
         
-        /* ✅ 1. إصلاح تداخل الفوتر: حجز مساحة سفلية في الصفحة */
+        /* ضبط الهوامش لمنع تداخل الفوتر */
         @page { 
             size: A4; 
             margin: 0; 
-            margin-bottom: 2cm; /* مساحة للفوتر */
+            margin-bottom: 2cm; 
         }
         
         body { margin: 0; font-family: 'Tajawal', sans-serif; -webkit-print-color-adjust: exact; background: white; }
@@ -38,14 +38,12 @@ const createPrintPage = (title: string, content: string, settings: PrintSettings
         .center-title { text-align: center; flex-grow: 1; z-index: 10; }
         .center-title h1 { font-size: 24px; font-weight: 900; border: 2px solid rgba(255,255,255,0.3); padding: 10px 30px; border-radius: 50px; display: inline-block; background: rgba(0,0,0,0.1); }
 
-        /* تعديل منطقة المحتوى لتجنب القص */
         .content-wrapper { padding: 30px 40px; }
 
         table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; }
         th { background-color: ${COLORS.tableHeader}; font-weight: 900; padding: 10px; border: 1px solid #000; text-align: center; }
         td { padding: 8px; border: 1px solid #000; text-align: center; font-weight: 500; }
         
-        /* ✅ الفوتر الثابت بأسلوب آمن للطباعة */
         .footer-container {
             background: ${COLORS.footerGradient};
             height: 30px;
@@ -68,7 +66,7 @@ const createPrintPage = (title: string, content: string, settings: PrintSettings
         .sig-line { border-bottom: 1px dashed #000; width: 80%; margin: 0 auto; }
         
         .grade-section { margin-bottom: 30px; page-break-inside: avoid; }
-        .period-header { background-color: #374151; color: white; padding: 10px; font-weight: bold; margin-top: 20px; border-radius: 8px; text-align: center; }
+        .period-header { background-color: #374151; color: white; padding: 10px; font-weight: bold; margin-top: 20px; border-radius: 8px; text-align: center; margin-bottom: 10px; }
         
         @media print { 
             .page-break { page-break-before: always; } 
@@ -101,15 +99,14 @@ const createPrintPage = (title: string, content: string, settings: PrintSettings
   `;
 };
 
-// --- ✅ الحل الشامل: كشف استلام الأوراق (مقسوم حسب الفترات + حسابات لحظية) ---
+// --- دالة: كشف استلام الأوراق (مقسم حسب الفترات + حسابات حية) ---
 export const printCommitteeReceipt = (data: AppData, settings: PrintSettings, date: string) => {
   let content = '';
   
-  // 1. جلب البيانات الخام
   const rawExams = (data as any).rawExams || [];
   const teachersList = (data as any).teachers || [];
 
-  // 2. فلترة اختبارات اليوم المحدد فقط (الحل لمشكلة التاريخ الثابت)
+  // فلترة اختبارات اليوم
   const todaysExams = rawExams.filter((e: any) => e.date === date);
 
   if (todaysExams.length === 0) {
@@ -117,22 +114,17 @@ export const printCommitteeReceipt = (data: AppData, settings: PrintSettings, da
       return;
   }
 
-  // 3. تقسيم الاختبارات حسب الفترات
+  // تقسيم حسب الفترات
   const periodsMap: Record<string, any[]> = {};
-  
   todaysExams.forEach((exam: any) => {
-      // تحديد اسم الفترة (الأولى / الثانية / أو غير ذلك)
       const periodName = exam.period || 'فترة عامة';
       if (!periodsMap[periodName]) periodsMap[periodName] = [];
       periodsMap[periodName].push(exam);
   });
 
-  // ترتيب الفترات (الأولى ثم الثانية)
-  const sortedPeriods = Object.keys(periodsMap).sort();
-
-  // 4. بناء الجدول لكل فترة
-  sortedPeriods.forEach((periodName, pIdx) => {
-      // فاصل صفحات بين الفترات (اختياري، هنا نضعهم تحت بعض أو في صفحات منفصلة)
+  // ترتيب الفترات وبناء الجداول
+  Object.keys(periodsMap).sort().forEach((periodName, pIdx) => {
+      // صفحة جديدة لكل فترة
       if (pIdx > 0) content += `<div class="page-break"></div>`;
 
       content += `<div class="period-header">${periodName}</div>`;
@@ -154,19 +146,13 @@ export const printCommitteeReceipt = (data: AppData, settings: PrintSettings, da
             <tbody>
       `;
 
-      // تجميع اختبارات هذه الفترة حسب اللجنة
-      // (قد يكون هناك أكثر من مادة في نفس اللجنة لنفس الفترة)
       const examsInPeriod = periodsMap[periodName];
-      
-      // استخراج أرقام اللجان الفريدة في هذه الفترة وفرزها
       const committeeNumbers = [...new Set(examsInPeriod.map((e: any) => e.committeeNumber))]
           .sort((a: any, b: any) => parseInt(a) - parseInt(b));
 
       committeeNumbers.forEach((commNum: any, index) => {
-          // جلب كل اختبارات هذه اللجنة في هذه الفترة
           const commExams = examsInPeriod.filter((e: any) => e.committeeNumber === commNum);
           
-          // الحسابات اللحظية (On-the-fly Calculation)
           let totalRegistered = 0;
           let totalAbsent = 0;
           const subjectsSet = new Set<string>();
@@ -191,9 +177,7 @@ export const printCommitteeReceipt = (data: AppData, settings: PrintSettings, da
           });
 
           const actualPresent = totalRegistered - totalAbsent;
-          // منع تكرار المواد إذا كانت مكررة
           const finalSubjects = Array.from(subjectsSet).join(' + '); 
-          // منع تكرار الأسماء
           const finalTeachers = Array.from(teacherNamesSet).join(' / ');
 
           content += `
@@ -219,12 +203,11 @@ export const printCommitteeReceipt = (data: AppData, settings: PrintSettings, da
   }
 };
 
-// --- باقي الدوال (الغياب + التسليم) تبقى كما هي ممتازة ---
+// --- دالة: كشف فرز ورصد الغياب ---
 export const printAbsenceSorting = (data: AppData, settings: PrintSettings, date: string) => {
     let content = '';
     const exams = (data as any).rawExams || [];
     
-    // فلترة حسب التاريخ
     const absentStudents = exams
         .filter((e: any) => e.date === date)
         .flatMap((e: any) => e.students.filter((s: any) => {
@@ -240,17 +223,46 @@ export const printAbsenceSorting = (data: AppData, settings: PrintSettings, date
             if(!groupedByGrade[s.grade]) groupedByGrade[s.grade] = [];
             groupedByGrade[s.grade].push(s);
         });
+
+        // ترتيب المراحل
         Object.keys(groupedByGrade).sort().forEach((grade, idx) => {
-            content += `<div class="grade-section" style="${idx > 0 ? 'margin-top: 40px;' : ''}">
-                <div style="background: #eee; padding: 8px; font-weight: bold;">المرحلة: ${grade}</div>
-                <table style="margin-top:0;"><thead><tr><th>م</th><th>رقم الجلوس</th><th>اسم الطالب</th><th>رقم اللجنة</th><th>المادة</th><th>ملاحظات</th></tr></thead><tbody>`;
+            content += `
+                <div class="grade-section" style="${idx > 0 ? 'margin-top: 40px;' : ''}">
+                    <div style="background: #eee; padding: 8px; font-weight: bold; border: 1px solid #000; border-bottom: none; width: fit-content; border-top-left-radius: 5px; border-top-right-radius: 5px;">
+                        المرحلة: ${grade}
+                    </div>
+                    <table style="margin-top:0;">
+                        <thead>
+                            <tr>
+                                <th width="5%">م</th>
+                                <th width="15%">رقم الجلوس</th>
+                                <th width="30%">اسم الطالب</th>
+                                <th width="10%">رقم اللجنة</th>
+                                <th width="20%">المادة</th>
+                                <th width="20%">ملاحظات</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+            `;
+            
             groupedByGrade[grade].forEach((student: any, i: number) => {
                 const cleanSubject = [...new Set(student.examSubject.split('+').map((s: string) => s.trim()))].join(' + ');
-                content += `<tr><td>${i + 1}</td><td>${student.seatNumber}</td><td>${student.name}</td><td>${student.committee}</td><td>${cleanSubject}</td><td></td></tr>`;
+                
+                content += `
+                    <tr>
+                        <td>${i + 1}</td>
+                        <td>${student.seatNumber}</td>
+                        <td style="text-align:right; padding-right:10px;">${student.name}</td>
+                        <td>${student.committee}</td>
+                        <td>${cleanSubject}</td>
+                        <td></td>
+                    </tr>
+                `;
             });
             content += `</tbody></table></div>`;
         });
     }
+
     const popup = window.open('', '_blank');
     if (popup) {
         popup.document.write(createPrintPage('كشف فرز ورصد الغياب الفعلي', content, { ...settings, date }));
@@ -258,11 +270,11 @@ export const printAbsenceSorting = (data: AppData, settings: PrintSettings, date
     }
 };
 
+// --- دالة: محضر تسليم واستلام (لجنة) ---
 export const printCommitteeHandover = (data: AppData, settings: PrintSettings, committeeId: string, date: string) => {
     const committee = data.committees.find(c => c.name === committeeId || String(c.id) === committeeId);
     if (!committee) return;
 
-    // جلب بيانات اليوم فقط
     const rawExams = (data as any).rawExams || [];
     const examsInCommittee = rawExams.filter((e: any) => e.committeeNumber === committee.name && e.date === date);
     
@@ -311,6 +323,7 @@ export const printCommitteeHandover = (data: AppData, settings: PrintSettings, c
     content += `</tbody></table>`;
 
     content += `<div style="margin-top: 40px;"><h3>أسماء الملاحظين:</h3><table style="width: 60%;"><tr><th width="10%">م</th><th>اسم المعلم</th><th>التوقيع</th></tr>`;
+    
     if (teacherNames.length > 0) {
         teacherNames.forEach((name: any, idx: number) => {
             content += `<tr><td>${idx + 1}</td><td>${name}</td><td></td></tr>`;
