@@ -8,7 +8,6 @@ const COLORS = {
 };
 
 const createPrintPage = (title: string, content: string, settings: PrintSettings) => {
-  // ... (نفس كود CSS والـ HTML السابق تماماً، لا تغيير هنا) ...
   return `
     <!DOCTYPE html>
     <html dir="rtl" lang="ar">
@@ -61,11 +60,7 @@ const createPrintPage = (title: string, content: string, settings: PrintSettings
   `;
 };
 
-// --- تحديث: كشف استلام الأوراق (يقبل التاريخ) ---
 export const printCommitteeReceipt = (data: AppData, settings: PrintSettings, date: string) => {
-  // سنقوم بفلترة الامتحانات حسب التاريخ المختار
-  // ملاحظة: data.rawExams يجب أن تمرر من App.tsx إذا لم تكن موجودة، سنعتمد على counts الحالية كحل مؤقت
-  // لكن الأفضل تمرير exams كاملة
   let content = `
     <table>
         <thead>
@@ -82,7 +77,6 @@ export const printCommitteeReceipt = (data: AppData, settings: PrintSettings, da
         <tbody>
   `;
 
-  // هذا الجزء يعتمد على البيانات الممررة، سنفترض وجود بيانات صحيحة
   const sortedCommittees = [...data.committees].sort((a, b) => parseInt(a.name) - parseInt(b.name));
   
   sortedCommittees.forEach((comm, index) => {
@@ -106,14 +100,12 @@ export const printCommitteeReceipt = (data: AppData, settings: PrintSettings, da
   }
 };
 
-// --- تحديث: كشف فرز الغياب (الحقيقي) ---
+// --- كشف فرز الغياب (المحدث) ---
 export const printAbsenceSorting = (data: AppData, settings: PrintSettings, date: string) => {
     let content = '';
     
-    // 1. البحث عن الطلاب الغائبين في اليوم المحدد
-    // نحتاج للوصول إلى `exams` من `data`. تأكد من أنك تمرر `rawExams` في `App.tsx`
-    // أو سنقوم باستخراج الغياب من الهيكل الحالي إذا كان متاحاً
-    const exams = (data as any).rawExams || []; // Fallback logic
+    // محاولة الوصول للبيانات الخام
+    const exams = (data as any).rawExams || [];
     
     const absentStudents = exams
         .filter((e: any) => e.date === date)
@@ -125,7 +117,6 @@ export const printAbsenceSorting = (data: AppData, settings: PrintSettings, date
     if (absentStudents.length === 0) {
         content = `<div style="text-align:center; padding:50px; font-size:18px;">لا يوجد طلاب غائبين مسجلين بتاريخ ${date}</div>`;
     } else {
-        // تجميع حسب المرحلة
         const groupedByGrade: any = {};
         absentStudents.forEach((s: any) => {
             if(!groupedByGrade[s.grade]) groupedByGrade[s.grade] = [];
@@ -154,13 +145,16 @@ export const printAbsenceSorting = (data: AppData, settings: PrintSettings, date
             `;
             
             groupedByGrade[grade].forEach((student: any, i: number) => {
+                // ✅ هنا يتم تنظيف اسم المادة من التكرار
+                const cleanSubject = [...new Set(student.examSubject.split('+').map((s: string) => s.trim()))].join(' + ');
+                
                 content += `
                     <tr>
                         <td>${i + 1}</td>
                         <td>${student.seatNumber}</td>
                         <td style="text-align:right; padding-right:10px;">${student.name}</td>
                         <td>${student.committee}</td>
-                        <td>${student.examSubject}</td>
+                        <td>${cleanSubject}</td>
                         <td></td>
                     </tr>
                 `;
@@ -177,8 +171,6 @@ export const printAbsenceSorting = (data: AppData, settings: PrintSettings, date
 };
 
 export const printCommitteeHandover = (data: AppData, settings: PrintSettings, committeeId: string, date: string) => {
-    // ... (نفس الكود السابق، فقط مرر date إلى createPrintPage)
-    // لا تنس تحديث المحتوى ليعكس الجدول الفعلي إذا أمكن
     const committee = data.committees.find(c => c.name === committeeId || String(c.id) === committeeId);
     if (!committee) return;
 
