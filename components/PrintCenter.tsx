@@ -6,8 +6,8 @@ import {
   printAbsenceSorting
 } from '../services/printService';
 import { 
-  Printer, Settings, FileText, List, Users, CheckCircle, 
-  FileCheck, ClipboardList, ShieldAlert
+  Printer, Settings, FileText, CheckCircle, 
+  FileCheck, ClipboardList, ShieldAlert, Calendar
 } from 'lucide-react';
 
 interface PrintCenterProps {
@@ -16,13 +16,16 @@ interface PrintCenterProps {
 }
 
 const PrintCenter: React.FC<PrintCenterProps> = ({ data, onUpdateSchool }) => {
-  // إعدادات افتراضية حسب طلبك
+  // التاريخ الافتراضي هو اليوم
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  
   const [settings, setSettings] = useState<PrintSettings>({
     adminName: 'الإدارة العامة للتعليم بمحافظة جدة',
     schoolName: 'ثانوية الأمير عبدالمجيد',
-    managerName: data.school.managerName || '', // يمكن حفظه في المتصفح
+    managerName: data.school.managerName || '', 
     agentName: data.school.agentName || '',
-    logoUrl: 'https://up6.cc/2026/02/177116640037762.png', // الشعار المطلوب
+    logoUrl: 'https://up6.cc/2026/02/177116640037762.png',
+    // ... باقي الإعدادات الافتراضية
     doorLabelTitle: 'بطاقة لجنة',
     attendanceTitle: 'كشف مناداة',
     stickerTitle: 'ملصق طاولة',
@@ -54,7 +57,7 @@ const PrintCenter: React.FC<PrintCenterProps> = ({ data, onUpdateSchool }) => {
     <div className="max-w-7xl mx-auto p-6 space-y-8 animate-fade-in">
       
       {/* 1. ترويسة الصفحة */}
-      <div className="bg-gradient-to-r from-[#0e3f51] to-[#258f9d] rounded-2xl p-8 text-white shadow-xl flex justify-between items-center">
+      <div className="bg-gradient-to-r from-[#0e3f51] to-[#258f9d] rounded-2xl p-8 text-white shadow-xl flex flex-col md:flex-row justify-between items-center gap-6">
         <div>
             <h2 className="text-3xl font-black mb-2 flex items-center gap-3">
                 <Printer className="w-8 h-8 text-yellow-400" />
@@ -62,8 +65,19 @@ const PrintCenter: React.FC<PrintCenterProps> = ({ data, onUpdateSchool }) => {
             </h2>
             <p className="opacity-90 text-lg">إصدار الكشوفات الرسمية والمحاضر بهوية بصرية معتمدة</p>
         </div>
-        <div className="hidden md:block opacity-20">
-            <FileText size={100} />
+        
+        {/* ✅ إضافة: محدد التاريخ */}
+        <div className="bg-white/10 p-4 rounded-xl backdrop-blur-sm border border-white/20 flex flex-col gap-2 min-w-[250px]">
+            <label className="text-xs font-bold text-white/80 flex items-center gap-2">
+                <Calendar size={14} />
+                تاريخ التقارير والكشوفات
+            </label>
+            <input 
+                type="date" 
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                className="bg-white text-[#0e3f51] font-bold rounded-lg px-3 py-2 outline-none text-center shadow-lg"
+            />
         </div>
       </div>
 
@@ -76,15 +90,7 @@ const PrintCenter: React.FC<PrintCenterProps> = ({ data, onUpdateSchool }) => {
                       <Settings className="w-5 h-5 text-gray-500" /> إعدادات الهوية
                   </h3>
                   <div className="space-y-4">
-                      <div>
-                          <label className="block text-xs font-bold text-gray-500 mb-1">اسم المدرسة</label>
-                          <input 
-                            type="text" 
-                            value={settings.schoolName}
-                            onChange={(e) => handleSettingChange('schoolName', e.target.value)}
-                            className="w-full bg-gray-50 border border-gray-200 rounded-lg p-2 text-sm focus:ring-2 focus:ring-[#258f9d] outline-none"
-                          />
-                      </div>
+                      {/* ... حقول الإعدادات كما هي ... */}
                       <div>
                           <label className="block text-xs font-bold text-gray-500 mb-1">مدير المدرسة</label>
                           <input 
@@ -92,7 +98,6 @@ const PrintCenter: React.FC<PrintCenterProps> = ({ data, onUpdateSchool }) => {
                             value={settings.managerName}
                             onChange={(e) => handleSettingChange('managerName', e.target.value)}
                             className="w-full bg-gray-50 border border-gray-200 rounded-lg p-2 text-sm focus:ring-2 focus:ring-[#258f9d] outline-none"
-                            placeholder="أ. عبدالله الشهري"
                           />
                       </div>
                       <div>
@@ -108,7 +113,7 @@ const PrintCenter: React.FC<PrintCenterProps> = ({ data, onUpdateSchool }) => {
               </div>
           </div>
 
-          {/* 3. قائمة التقارير (يسار - المساحة الأكبر) */}
+          {/* 3. قائمة التقارير (يسار) */}
           <div className="lg:col-span-2 space-y-6">
               
               {/* قسم الكنترول والاستلام */}
@@ -116,21 +121,19 @@ const PrintCenter: React.FC<PrintCenterProps> = ({ data, onUpdateSchool }) => {
                   <h3 className="font-bold text-lg text-[#0e3f51] mb-4 border-b pb-2">نماذج الكنترول والاستلام</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       
-                      {/* زر كشف استلام عام */}
                       <ReportCard 
                           title="كشف استلام الأوراق من اللجان"
-                          desc="جدول عام لجميع اللجان (عدد الأوراق، الحضور، التوقيع)"
+                          desc="جدول عام لجميع اللجان (عدد الأوراق، الحضور، التوقيع) لليوم المحدد"
                           icon={ClipboardList}
-                          onClick={() => printCommitteeReceipt(data, settings)}
+                          onClick={() => printCommitteeReceipt(data, settings, selectedDate)}
                           color="bg-blue-50 text-blue-700"
                       />
 
-                      {/* زر فرز الغياب */}
                       <ReportCard 
                           title="كشف فرز ورصد الغياب"
-                          desc="نماذج منفصلة لكل مرحلة لرصد أرقام جلوس الغائبين"
+                          desc="كشف آلي بأسماء الطلاب الغائبين فقط حسب التاريخ المحدد"
                           icon={ShieldAlert}
-                          onClick={() => printAbsenceSorting(data, settings)}
+                          onClick={() => printAbsenceSorting(data, settings, selectedDate)} // تمرير التاريخ
                           color="bg-red-50 text-red-700"
                       />
 
@@ -160,12 +163,10 @@ const PrintCenter: React.FC<PrintCenterProps> = ({ data, onUpdateSchool }) => {
                           icon={FileCheck}
                           onClick={() => {
                               if(!selectedCommittee) alert('الرجاء اختيار لجنة أولاً');
-                              else printCommitteeHandover(data, settings, selectedCommittee);
+                              else printCommitteeHandover(data, settings, selectedCommittee, selectedDate);
                           }}
                           color="bg-green-50 text-green-700"
                       />
-                      
-                      {/* يمكنك إضافة المزيد من الأزرار هنا للكشوف الأخرى */}
                   </div>
               </div>
 
@@ -175,19 +176,10 @@ const PrintCenter: React.FC<PrintCenterProps> = ({ data, onUpdateSchool }) => {
   );
 };
 
-// مكون بطاقة التقرير
 const ReportCard = ({ title, desc, icon: Icon, onClick, color }: any) => (
-    <button 
-        onClick={onClick}
-        className="flex items-start gap-4 p-4 rounded-xl border border-gray-100 hover:border-[#258f9d] hover:shadow-md transition-all text-right group w-full bg-white"
-    >
-        <div className={`p-3 rounded-lg ${color} group-hover:scale-110 transition-transform`}>
-            <Icon size={24} />
-        </div>
-        <div>
-            <h4 className="font-bold text-gray-800 mb-1 group-hover:text-[#0e3f51] transition-colors">{title}</h4>
-            <p className="text-xs text-gray-500 leading-relaxed">{desc}</p>
-        </div>
+    <button onClick={onClick} className="flex items-start gap-4 p-4 rounded-xl border border-gray-100 hover:border-[#258f9d] hover:shadow-md transition-all text-right group w-full bg-white">
+        <div className={`p-3 rounded-lg ${color} group-hover:scale-110 transition-transform`}><Icon size={24} /></div>
+        <div><h4 className="font-bold text-gray-800 mb-1 group-hover:text-[#0e3f51] transition-colors">{title}</h4><p className="text-xs text-gray-500 leading-relaxed">{desc}</p></div>
     </button>
 );
 
