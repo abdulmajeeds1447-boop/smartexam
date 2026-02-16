@@ -16,7 +16,6 @@ interface PrintCenterProps {
 }
 
 const PrintCenter: React.FC<PrintCenterProps> = ({ data, onUpdateSchool }) => {
-  // التاريخ الافتراضي هو اليوم
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   
   const [settings, setSettings] = useState<PrintSettings>({
@@ -25,7 +24,6 @@ const PrintCenter: React.FC<PrintCenterProps> = ({ data, onUpdateSchool }) => {
     managerName: data.school.managerName || '', 
     agentName: data.school.agentName || '',
     logoUrl: 'https://up6.cc/2026/02/177116640037762.png',
-    // ... باقي الإعدادات الافتراضية
     doorLabelTitle: 'بطاقة لجنة',
     attendanceTitle: 'كشف مناداة',
     stickerTitle: 'ملصق طاولة',
@@ -56,7 +54,7 @@ const PrintCenter: React.FC<PrintCenterProps> = ({ data, onUpdateSchool }) => {
   return (
     <div className="max-w-7xl mx-auto p-6 space-y-8 animate-fade-in">
       
-      {/* 1. ترويسة الصفحة */}
+      {/* ترويسة الصفحة */}
       <div className="bg-gradient-to-r from-[#0e3f51] to-[#258f9d] rounded-2xl p-8 text-white shadow-xl flex flex-col md:flex-row justify-between items-center gap-6">
         <div>
             <h2 className="text-3xl font-black mb-2 flex items-center gap-3">
@@ -66,7 +64,7 @@ const PrintCenter: React.FC<PrintCenterProps> = ({ data, onUpdateSchool }) => {
             <p className="opacity-90 text-lg">إصدار الكشوفات الرسمية والمحاضر بهوية بصرية معتمدة</p>
         </div>
         
-        {/* ✅ إضافة: محدد التاريخ */}
+        {/* ✅ محدد التاريخ */}
         <div className="bg-white/10 p-4 rounded-xl backdrop-blur-sm border border-white/20 flex flex-col gap-2 min-w-[250px]">
             <label className="text-xs font-bold text-white/80 flex items-center gap-2">
                 <Calendar size={14} />
@@ -83,14 +81,13 @@ const PrintCenter: React.FC<PrintCenterProps> = ({ data, onUpdateSchool }) => {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           
-          {/* 2. الإعدادات السريعة (يمين) */}
+          {/* الإعدادات السريعة */}
           <div className="lg:col-span-1 space-y-6">
               <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
                   <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
                       <Settings className="w-5 h-5 text-gray-500" /> إعدادات الهوية
                   </h3>
                   <div className="space-y-4">
-                      {/* ... حقول الإعدادات كما هي ... */}
                       <div>
                           <label className="block text-xs font-bold text-gray-500 mb-1">مدير المدرسة</label>
                           <input 
@@ -113,14 +110,11 @@ const PrintCenter: React.FC<PrintCenterProps> = ({ data, onUpdateSchool }) => {
               </div>
           </div>
 
-          {/* 3. قائمة التقارير (يسار) */}
+          {/* قائمة التقارير */}
           <div className="lg:col-span-2 space-y-6">
-              
-              {/* قسم الكنترول والاستلام */}
               <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
                   <h3 className="font-bold text-lg text-[#0e3f51] mb-4 border-b pb-2">نماذج الكنترول والاستلام</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      
                       <ReportCard 
                           title="كشف استلام الأوراق من اللجان"
                           desc="جدول عام لجميع اللجان (عدد الأوراق، الحضور، التوقيع) لليوم المحدد"
@@ -128,19 +122,16 @@ const PrintCenter: React.FC<PrintCenterProps> = ({ data, onUpdateSchool }) => {
                           onClick={() => printCommitteeReceipt(data, settings, selectedDate)}
                           color="bg-blue-50 text-blue-700"
                       />
-
                       <ReportCard 
                           title="كشف فرز ورصد الغياب"
                           desc="كشف آلي بأسماء الطلاب الغائبين فقط حسب التاريخ المحدد"
                           icon={ShieldAlert}
-                          onClick={() => printAbsenceSorting(data, settings, selectedDate)} // تمرير التاريخ
+                          onClick={() => printAbsenceSorting(data, settings, selectedDate)} 
                           color="bg-red-50 text-red-700"
                       />
-
                   </div>
               </div>
 
-              {/* قسم اللجان التفصيلي */}
               <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
                   <h3 className="font-bold text-lg text-[#0e3f51] mb-4 border-b pb-2 flex justify-between items-center">
                       <span>نماذج اللجان التفصيلية</span>
@@ -169,7 +160,6 @@ const PrintCenter: React.FC<PrintCenterProps> = ({ data, onUpdateSchool }) => {
                       />
                   </div>
               </div>
-
           </div>
       </div>
     </div>
