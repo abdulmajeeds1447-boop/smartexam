@@ -22,9 +22,7 @@ const AppContent: React.FC = () => {
     if (userRole === Role.COUNSELOR) setCurrentPage('counselor_dashboard');
   }, [userRole]);
 
-  // ✅ محول البيانات الذكي لمركز الطباعة (تم تحديثه لحساب الأعداد)
   const getPrintData = () => {
-      // 1. تحويل الطلاب ليتوافقوا مع الهيكل القديم
       const mappedStudents = students.map(s => ({
           ...s,
           studentId: s.id,        
@@ -32,17 +30,14 @@ const AppContent: React.FC = () => {
           phone: s.parentPhone    
       }));
 
-      // 2. استنتاج اللجان وحساب أعداد الطلاب فيها (الحل لمشكلة الأصفار)
+      // 1. استنتاج اللجان (مع الفرز الرقمي الصحيح)
       const uniqueCommittees = Array.from(new Set(
           [...exams.map(e => e.committeeNumber), ...students.map(s => s.committeeNumber)]
           .filter(Boolean)
-      ));
+      )).sort((a, b) => parseInt(a) - parseInt(b)); // ✅ الحل لمشكلة الترتيب (1, 2, 10)
 
       const committeesData = uniqueCommittees.map((num, idx) => {
-          // حساب عدد الطلاب في هذه اللجنة لكل مرحلة
           const committeeStudents = students.filter(s => s.committeeNumber === num);
-          
-          // 1=أول، 2=ثاني، 3=ثالث (حسب معرفات المراحل في الأسفل)
           const counts: Record<number, number> = { 1: 0, 2: 0, 3: 0 }; 
 
           committeeStudents.forEach(s => {
@@ -52,15 +47,14 @@ const AppContent: React.FC = () => {
           });
 
           return {
-              id: idx + 1,
+              id: parseInt(num), // تأكدنا أنه رقم
               name: String(num),
               location: exams.find(e => e.committeeNumber === num)?.location || '',
-              counts: counts, // ✅ الآن تحتوي على الأرقام الفعلية
+              counts: counts,
               invigilatorCount: 1
           };
       });
 
-      // 3. هيكل المراحل
       const stagesData = [
           { 
               id: 1, name: 'أول ثانوي', prefix: '1', total: 0, 
@@ -82,7 +76,7 @@ const AppContent: React.FC = () => {
           committees: committeesData,
           teachers: teachers,
           schedule: undefined,
-          rawExams: exams 
+          rawExams: exams // البيانات الخام ضرورية لجلب أسماء المعلمين
       };
   };
 
