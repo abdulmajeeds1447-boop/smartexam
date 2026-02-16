@@ -22,9 +22,7 @@ const AppContent: React.FC = () => {
     if (userRole === Role.COUNSELOR) setCurrentPage('counselor_dashboard');
   }, [userRole]);
 
-  // ✅ محول البيانات الذكي لمركز الطباعة
   const getPrintData = () => {
-      // 1. تحويل الطلاب ليتوافقوا مع الهيكل القديم
       const mappedStudents = students.map(s => ({
           ...s,
           studentId: s.id,        
@@ -32,7 +30,6 @@ const AppContent: React.FC = () => {
           phone: s.parentPhone    
       }));
 
-      // 2. استنتاج اللجان
       const uniqueCommittees = Array.from(new Set(
           [...exams.map(e => e.committeeNumber), ...students.map(s => s.committeeNumber)]
           .filter(Boolean)
@@ -46,7 +43,6 @@ const AppContent: React.FC = () => {
           invigilatorCount: 1
       }));
 
-      // 3. هيكل المراحل
       const stagesData = [
           { 
               id: 1, name: 'أول ثانوي', prefix: '1', total: 0, 
@@ -68,7 +64,7 @@ const AppContent: React.FC = () => {
           committees: committeesData,
           teachers: teachers,
           schedule: undefined,
-          rawExams: exams // ✅ هام جداً: تمرير الامتحانات الخام ليعمل كشف الغياب
+          rawExams: exams // ✅ تمرير البيانات الخام
       };
   };
 
