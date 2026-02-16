@@ -8,7 +8,6 @@ const COLORS = {
 };
 
 const createPrintPage = (title: string, content: string, settings: PrintSettings) => {
-  // ... (نفس كود CSS والـ HTML السابق) ...
   return `
     <!DOCTYPE html>
     <html dir="rtl" lang="ar">
@@ -62,44 +61,42 @@ const createPrintPage = (title: string, content: string, settings: PrintSettings
   `;
 };
 
-// --- كشف استلام الأوراق (مع تعبئة الأسماء آلياً) ---
+// --- 1. كشف استلام الأوراق (تحديث شامل) ---
 export const printCommitteeReceipt = (data: AppData, settings: PrintSettings, date: string) => {
   let content = `
     <table>
         <thead>
             <tr>
                 <th width="5%">م</th>
-                <th width="10%">رقم اللجنة</th>
+                <th width="8%">اللجنة</th>
                 <th width="15%">المقر</th>
-                <th width="30%">المادة / الصف</th>
-                <th width="10%">العدد</th>
-                <th width="30%">اسم وتوقيع المستلم</th>
+                <th width="20%">المادة</th>
+                <th width="10%">المسجلين</th>
+                <th width="10%">الغياب</th>
+                <th width="10%">الحضور الفعلي</th>
+                <th width="22%">اسم وتوقيع المستلم</th>
             </tr>
         </thead>
         <tbody>
   `;
 
-  // 1. فرز اللجان رقمياً (Numeric Sort)
+  // فرز اللجان
   const sortedCommittees = [...data.committees].sort((a, b) => parseInt(a.name) - parseInt(b.name));
   
-  // 2. الوصول للبيانات الخام للبحث عن اسم المعلم
-  const rawExams = (data as any).rawExams || [];
-
-  sortedCommittees.forEach((comm, index) => {
-      const totalStudents = Object.values(comm.counts || {}).reduce((a, b) => a + b, 0);
+  sortedCommittees.forEach((comm: any, index) => {
+      // ✅ استخدام البيانات المحسوبة مسبقاً في App.tsx
+      const stats = comm.stats || { total: 0, absent: 0, present: 0, subjects: '', teachers: '' };
       
-      // ✅ البحث عن اسم المعلم الذي استلم هذه اللجنة في هذا التاريخ
-      const exam = rawExams.find((e: any) => e.committeeNumber === comm.name && e.date === date);
-      const teacherName = exam && exam.teacherId ? exam.teacherId : '';
-
       content += `
         <tr style="height: 50px;">
             <td>${index + 1}</td>
             <td style="font-size: 16px; font-weight: bold;">${comm.name}</td>
             <td>${comm.location}</td>
-            <td></td> 
-            <td style="font-weight:900; font-size:14px;">${totalStudents}</td>
-            <td style="font-family: 'Tajawal'; font-weight:bold; color: #0e3f51;">${teacherName}</td> 
+            <td style="font-size: 11px;">${stats.subjects}</td>
+            <td>${stats.total}</td>
+            <td style="color: red; font-weight: bold;">${stats.absent}</td>
+            <td style="color: green; font-weight: 900; font-size: 14px;">${stats.present}</td>
+            <td style="font-family: 'Tajawal'; font-weight:bold; color: #0e3f51; font-size: 11px;">${stats.teachers}</td> 
         </tr>`;
   });
   content += `</tbody></table>`;
@@ -111,18 +108,20 @@ export const printCommitteeReceipt = (data: AppData, settings: PrintSettings, da
   }
 };
 
+// --- 2. كشف فرز الغياب (كما هو، ممتاز) ---
 export const printAbsenceSorting = (data: AppData, settings: PrintSettings, date: string) => {
-    // ... (نفس كود الغياب السابق الذي أرسلته لك، لا تغيير عليه فهو سليم) ...
-    // سأعيد كتابته هنا للتأكيد
     let content = '';
     const exams = (data as any).rawExams || [];
-    const absentStudents = exams.filter((e: any) => e.date === date).flatMap((e: any) => e.students.filter((s: any) => {
-        const record = e.attendance.find((a: any) => a.studentId === s.id);
-        return record?.status === AttendanceStatus.ABSENT;
-    }).map((s: any) => ({ ...s, examSubject: e.subject, committee: e.committeeNumber })));
+    
+    const absentStudents = exams
+        .filter((e: any) => e.date === date)
+        .flatMap((e: any) => e.students.filter((s: any) => {
+            const record = e.attendance.find((a: any) => a.studentId === s.id);
+            return record?.status === AttendanceStatus.ABSENT;
+        }).map((s: any) => ({ ...s, examSubject: e.subject, committee: e.committeeNumber })));
 
     if (absentStudents.length === 0) {
-        content = `<div style="text-align:center; padding:50px;">لا يوجد طلاب غائبين مسجلين بتاريخ ${date}</div>`;
+        content = `<div style="text-align:center; padding:50px; font-size:18px;">لا يوجد طلاب غائبين مسجلين بتاريخ ${date}</div>`;
     } else {
         const groupedByGrade: any = {};
         absentStudents.forEach((s: any) => {
@@ -147,15 +146,22 @@ export const printAbsenceSorting = (data: AppData, settings: PrintSettings, date
     }
 };
 
-// --- محضر تسليم اللجنة (مع اسم المراقبين) ---
+// --- 3. محضر تسليم اللجنة (مع الأسماء والمواد) ---
 export const printCommitteeHandover = (data: AppData, settings: PrintSettings, committeeId: string, date: string) => {
     const committee = data.committees.find(c => c.name === committeeId || String(c.id) === committeeId);
     if (!committee) return;
 
-    // ✅ جلب أسماء المراقبين
+    // ✅ جلب البيانات الحية: المواد وأسماء المعلمين
     const rawExams = (data as any).rawExams || [];
     const examsInCommittee = rawExams.filter((e: any) => e.committeeNumber === committee.name && e.date === date);
-    const teacherNames = [...new Set(examsInCommittee.map((e: any) => e.teacherId).filter(Boolean))];
+    
+    // استخراج أسماء المعلمين (البحث في قائمة المعلمين بدلاً من إظهار الرقم)
+    const teachersList = (data as any).teachers || [];
+    const teacherNames = [...new Set(examsInCommittee.map((e: any) => {
+        if (!e.teacherId) return '';
+        const t = teachersList.find((teach: any) => teach.id === e.teacherId || teach.phone === e.teacherId);
+        return t ? t.name : e.teacherId;
+    }).filter(Boolean))];
 
     let content = `
         <div style="border: 2px solid #000; padding: 15px; margin-bottom: 20px; background: #f9f9f9;">
@@ -165,19 +171,51 @@ export const printCommitteeHandover = (data: AppData, settings: PrintSettings, c
             </div>
         </div>
         <table>
-            <thead><tr><th width="30%">الصف</th><th width="30%">المادة</th><th width="10%">العدد</th><th width="15%">وقت الاستلام</th><th width="15%">توقيع</th></tr></thead>
+            <thead><tr><th width="25%">الصف</th><th width="30%">المادة</th><th width="10%">المسجلين</th><th width="10%">حضور فعلي</th><th width="25%">توقيع المراقب</th></tr></thead>
             <tbody>
     `;
-    data.stages.forEach(stage => {
-        const count = committee.counts[stage.id] || 0;
-        content += `<tr style="height: 60px;"><td style="font-weight: bold;">${stage.name}</td><td></td><td>${count > 0 ? count : ''}</td><td></td><td></td></tr>`;
+    
+    // إنشاء صفوف للمراحل الموجودة في هذه اللجنة
+    const gradesInComm = [...new Set(examsInCommittee.flatMap((e: any) => e.grades))];
+    
+    // دالة مساعدة لترتيب المراحل
+    const getWeight = (s: string) => { if(s.includes('أول')) return 1; if(s.includes('ثاني')) return 2; return 3; };
+    gradesInComm.sort((a: any, b: any) => getWeight(a) - getWeight(b));
+
+    gradesInComm.forEach((grade: any) => {
+        // البحث عن الامتحان الخاص بهذه المرحلة
+        const exam = examsInCommittee.find((e: any) => e.grades.includes(grade));
+        const subject = exam ? exam.subject : '';
+        
+        // حساب عدد طلاب هذه المرحلة تحديداً
+        const studentsInGrade = exam ? exam.students.filter((s: any) => s.grade === grade) : [];
+        const total = studentsInGrade.length;
+        
+        // حساب حضور هذه المرحلة
+        const attendance = exam ? exam.attendance.filter((a: any) => 
+            studentsInGrade.some((s: any) => s.id === a.studentId) && a.status === AttendanceStatus.PRESENT
+        ).length : 0;
+
+        // إذا لم يكن هناك حضور مسجل، نعتبر الحضور الفعلي = العدد الكلي مؤقتاً أو صفر (حسب الرغبة)
+        // هنا سنعرض (العدد الكلي - الغياب) ليكون أدق
+        const absents = exam ? exam.attendance.filter((a: any) => 
+            studentsInGrade.some((s: any) => s.id === a.studentId) && a.status === AttendanceStatus.ABSENT
+        ).length : 0;
+        const actualPresence = total - absents;
+
+        content += `<tr style="height: 60px;">
+            <td style="font-weight: bold;">${grade}</td>
+            <td>${subject}</td>
+            <td>${total}</td>
+            <td style="font-weight:bold;">${actualPresence}</td>
+            <td></td>
+        </tr>`;
     });
     content += `</tbody></table>`;
 
-    // جدول المراقبين المعبأ آلياً
+    // جدول المراقبين (بالأسماء الصريحة)
     content += `<div style="margin-top: 40px;"><h3>أسماء الملاحظين:</h3><table style="width: 60%;"><tr><th width="10%">م</th><th>اسم المعلم</th><th>التوقيع</th></tr>`;
     
-    // إذا وجدنا أسماء، نملؤها، وإلا نترك فراغات
     if (teacherNames.length > 0) {
         teacherNames.forEach((name: any, idx: number) => {
             content += `<tr><td>${idx + 1}</td><td>${name}</td><td></td></tr>`;
