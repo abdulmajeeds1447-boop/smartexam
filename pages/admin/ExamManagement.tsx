@@ -8,7 +8,8 @@ import {
 import { EnvelopeStatus, ExamEnvelope, Student, AttendanceStatus } from '../../types';
 import { doc, getDoc, getDocs, collection } from 'firebase/firestore'; 
 import { db } from '../../firebase';
-import { Scanner } from '../teacher/Scanner'; 
+import { Scanner } from '../teacher/Scanner';
+import { printCommitteeSticker } from '../../services/printService'; // ✅ استيراد الدالة الجديدة
 
 export const ExamManagement: React.FC = () => {
   const { exams, students, teachers, importExams, clearAllExams, deliverEnvelopeToControl, processAdminDeliveryScan } = useApp();
@@ -70,49 +71,18 @@ export const ExamManagement: React.FC = () => {
       if (!canvas) return;
       const imgUrl = canvas.toDataURL(); // تحويل الباركود لصورة
 
-      const win = window.open('', '', 'width=600,height=800');
-      if (win) {
-          win.document.write(`
-              <html>
-              <head>
-                  <title>ملصق لجنة ${selectedCommittee.number}</title>
-                  <style>
-                      @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;900&display=swap');
-                      body { font-family: 'Tajawal', sans-serif; text-align: center; padding: 20px; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-                      .sticker { 
-                          border: 8px solid #000; 
-                          padding: 40px; 
-                          border-radius: 30px; 
-                          width: 100%; 
-                          max-width: 500px; 
-                          box-sizing: border-box;
-                      }
-                      .label { font-size: 24px; font-weight: bold; color: #555; margin: 0; }
-                      h1 { font-size: 120px; margin: 0; line-height: 1; font-weight: 900; }
-                      h2 { font-size: 40px; margin: 10px 0 40px; color: #000; background: #eee; padding: 10px; border-radius: 15px; }
-                      img { width: 100%; max-width: 350px; height: auto; display: block; margin: 0 auto; }
-                      @media print {
-                          @page { margin: 0; size: auto; }
-                          body { -webkit-print-color-adjust: exact; }
-                      }
-                  </style>
-              </head>
-              <body>
-                  <div class="sticker">
-                      <p class="label">رقم اللجنة</p>
-                      <h1>${selectedCommittee.number}</h1>
-                      <h2>📍 ${selectedCommittee.location}</h2>
-                      <img src="${imgUrl}" />
-                      <p style="margin-top: 20px; font-size: 14px;">امسح الكود لتسجيل الحضور</p>
-                  </div>
-                  <script>
-                      window.onload = function() { window.print(); window.close(); }
-                  </script>
-              </body>
-              </html>
-          `);
-          win.document.close();
-      }
+      // إعدادات افتراضية للهوية (بما أننا في صفحة الكنترول قد لا نكون مررنا بصفحة الطباعة)
+      const defaultSettings = {
+          schoolName: 'ثانوية الأمير عبدالمجيد',
+          adminName: 'الإدارة العامة للتعليم بمحافظة جدة',
+          managerName: '',
+          agentName: '',
+          logoUrl: 'https://up6.cc/2026/02/177116640037762.png',
+          doorLabelTitle: '', attendanceTitle: '', stickerTitle: '', showBorder: true, colSequence: '', colSeatId: '', colName: '', colStage: '', colPresence: '', colSignature: '', showColSequence: true, showColSeatId: true, showColName: true, showColStage: true, showColPresence: true, showColSignature: true
+      };
+
+      // استدعاء خدمة الطباعة الموحدة
+      printCommitteeSticker(selectedCommittee.number, selectedCommittee.location, imgUrl, defaultSettings);
   };
 
   // 5. Cloud Ops
@@ -205,7 +175,9 @@ export const ExamManagement: React.FC = () => {
             <div>
                 <h2 className="text-3xl font-black text-slate-800 flex items-center gap-3">
                     غرفة عمليات الكنترول
-                    <div className="bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-bold animate-pulse flex items-center gap-1"><span className="w-2 h-2 bg-green-500 rounded-full"></span> متصل</div>
+                    <div className="bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-bold animate-pulse flex items-center gap-1">
+                        <span className="w-2 h-2 bg-green-500 rounded-full"></span> متصل
+                    </div>
                 </h2>
                 <p className="text-gray-500 mt-2 font-medium">إدارة شاملة لدورة حياة الاختبارات</p>
             </div>
@@ -268,6 +240,7 @@ export const ExamManagement: React.FC = () => {
                                         <div>
                                             <h4 className="font-black text-gray-800 text-sm mb-1">{exam.subject}</h4>
                                             <div className="flex items-center gap-3 text-xs font-bold text-gray-500"><span className="flex items-center gap-1 bg-gray-100 px-2 py-0.5 rounded text-gray-600"><Clock size={12} /> {exam.startTime}</span><span className="text-gray-300">|</span><span>{exam.period}</span></div>
+                                            {/* ✅ عرض الاسم الصريح للمعلم */}
                                             {exam.teacherId && <div className="flex items-center gap-1.5 text-[10px] text-blue-700 mt-2 font-bold bg-blue-50 px-2 py-1 rounded-lg w-fit"><UserCheck size={12} />{getTeacherName(exam.teacherId)}</div>}
                                         </div>
                                         <div className="flex flex-col items-end gap-1">
@@ -275,6 +248,7 @@ export const ExamManagement: React.FC = () => {
                                         </div>
                                     </div>
                                     <div className="border-t border-gray-50 pt-2 mt-2 pl-2">
+                                        {/* زر الاستلام اليدوي (احتياطي) */}
                                         {exam.status === EnvelopeStatus.COMPLETED && (
                                             <button onClick={() => { if(window.confirm(`استلام مظروف ${exam.subject}؟`)) deliverEnvelopeToControl(exam.id); }} className="w-full bg-slate-900 text-white py-2.5 rounded-xl text-xs font-bold hover:bg-slate-800 flex items-center justify-center gap-2 shadow-lg transition-transform active:scale-[0.98]"><ArrowRightLeft size={14} className="text-green-400" /> استلام المظروف</button>
                                         )}
@@ -290,7 +264,7 @@ export const ExamManagement: React.FC = () => {
         })}
       </div>
 
-      {/* ✅ مودال الماسح */}
+      {/* ✅ مودال الاستلام بالماسح */}
       {showReceiveScanner && (
         <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
             <div className="bg-white rounded-[2.5rem] w-full max-w-md overflow-hidden relative shadow-2xl">
@@ -306,7 +280,7 @@ export const ExamManagement: React.FC = () => {
         </div>
       )}
 
-      {/* ✅ مودال QR الخاص باللجنة (المحدث للطباعة النظيفة) */}
+      {/* ✅ مودال QR الخاص باللجنة (المحدث) */}
       {selectedCommittee && (
         <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-white rounded-[2rem] p-8 text-center max-w-sm w-full relative shadow-2xl animate-scale-in">
@@ -319,7 +293,7 @@ export const ExamManagement: React.FC = () => {
                 <QRCodeCanvas id="committee-qr" value={JSON.stringify({ type: 'committee', id: selectedCommittee.number })} size={200} />
              </div>
              
-             {/* ✅ الزر الآن يستدعي الدالة الاحترافية */}
+             {/* ✅ الزر الآن يستدعي الدالة الاحترافية للطباعة */}
              <button onClick={handlePrintSticker} className="w-full bg-slate-900 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-3 hover:bg-slate-800 transition-all shadow-xl">
                  <Printer size={20}/> طباعة الملصق التعريفي
              </button>
@@ -327,24 +301,36 @@ export const ExamManagement: React.FC = () => {
         </div>
       )}
 
-      {/* Wizard & Delete Modals (كما هي) */}
+      {/* Wizard Modal */}
       {showWizard && (
           <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
               <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl animate-scale-in overflow-hidden">
-                  {/* ... محتوى الويزارد ... */}
                   <div className="bg-slate-900 p-8 text-white relative overflow-hidden">
                       <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full blur-2xl -translate-y-10 translate-x-10"></div>
                       <h3 className="font-bold text-2xl flex items-center gap-3 relative z-10"><Database className="text-green-400" /> مراجعة البيانات</h3>
+                      <p className="text-slate-400 text-sm mt-2 relative z-10">تأكيد استيراد الجدول وتوزيع الطلاب من النظام الأول</p>
                   </div>
                   <div className="p-8 space-y-6">
+                      <div className="space-y-4">
+                          <div className="flex justify-between items-center p-4 bg-gray-50 rounded-2xl border border-gray-100">
+                              <span className="text-gray-500 font-bold text-sm">أيام الاختبارات</span>
+                              <span className="text-xl font-black text-slate-800">{cloudSchedule?.days.length} أيام</span>
+                          </div>
+                          <div className="flex justify-between items-center p-4 bg-gray-50 rounded-2xl border border-gray-100">
+                              <span className="text-gray-500 font-bold text-sm">عدد اللجان</span>
+                              <span className="text-xl font-black text-slate-800">{Object.keys(cloudCommitteesConfig).length} لجنة</span>
+                          </div>
+                      </div>
                       <button onClick={handleGenerateFromCloud} className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold text-lg hover:bg-blue-700 shadow-xl shadow-blue-200 flex items-center justify-center gap-2 active:scale-95 transition-all">
-                          <Sparkles size={20} className="text-yellow-300" /> تنفيذ التوزيع
+                          <Sparkles size={20} className="text-yellow-300" />
+                          تنفيذ التوزيع والاعتماد
                       </button>
                   </div>
               </div>
           </div>
       )}
 
+      {/* Delete Modal */}
        {showDeleteModal && (
           <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
               <div className="bg-white rounded-[2rem] p-8 max-w-sm w-full text-center shadow-2xl animate-scale-in">
