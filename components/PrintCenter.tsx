@@ -16,7 +16,7 @@ interface PrintCenterProps {
 }
 
 const PrintCenter: React.FC<PrintCenterProps> = ({ data, onUpdateSchool }) => {
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [selectedDate, setSelectedDate] = useState(new Date().toLocaleDateString('en-CA'));
   
   const [settings, setSettings] = useState<PrintSettings>({
     adminName: 'الإدارة العامة للتعليم بمحافظة جدة',
@@ -51,6 +51,11 @@ const PrintCenter: React.FC<PrintCenterProps> = ({ data, onUpdateSchool }) => {
     }
   };
 
+  // فرز اللجان للقائمة المنسدلة
+  const sortedCommittees = [...data.committees].sort((a, b) => 
+    parseInt(a.name) - parseInt(b.name)
+  );
+
   return (
     <div className="max-w-7xl mx-auto p-6 space-y-8 animate-fade-in">
       
@@ -64,7 +69,6 @@ const PrintCenter: React.FC<PrintCenterProps> = ({ data, onUpdateSchool }) => {
             <p className="opacity-90 text-lg">إصدار الكشوفات الرسمية والمحاضر بهوية بصرية معتمدة</p>
         </div>
         
-        {/* ✅ محدد التاريخ */}
         <div className="bg-white/10 p-4 rounded-xl backdrop-blur-sm border border-white/20 flex flex-col gap-2 min-w-[250px]">
             <label className="text-xs font-bold text-white/80 flex items-center gap-2">
                 <Calendar size={14} />
@@ -81,7 +85,7 @@ const PrintCenter: React.FC<PrintCenterProps> = ({ data, onUpdateSchool }) => {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           
-          {/* الإعدادات السريعة */}
+          {/* الإعدادات */}
           <div className="lg:col-span-1 space-y-6">
               <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
                   <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
@@ -110,14 +114,14 @@ const PrintCenter: React.FC<PrintCenterProps> = ({ data, onUpdateSchool }) => {
               </div>
           </div>
 
-          {/* قائمة التقارير */}
+          {/* التقارير */}
           <div className="lg:col-span-2 space-y-6">
               <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
                   <h3 className="font-bold text-lg text-[#0e3f51] mb-4 border-b pb-2">نماذج الكنترول والاستلام</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <ReportCard 
                           title="كشف استلام الأوراق من اللجان"
-                          desc="جدول عام لجميع اللجان (عدد الأوراق، الحضور، التوقيع) لليوم المحدد"
+                          desc="جدول عام لجميع اللجان (عدد الأوراق، الحضور، وتوقيع المراقب المستلم آلياً)"
                           icon={ClipboardList}
                           onClick={() => printCommitteeReceipt(data, settings, selectedDate)}
                           color="bg-blue-50 text-blue-700"
@@ -141,7 +145,8 @@ const PrintCenter: React.FC<PrintCenterProps> = ({ data, onUpdateSchool }) => {
                         onChange={(e) => setSelectedCommittee(e.target.value)}
                       >
                           <option value="">اختر لجنة محددة...</option>
-                          {data.committees.map(c => (
+                          {/* ✅ القائمة المرتبة رقمياً */}
+                          {sortedCommittees.map(c => (
                               <option key={c.id} value={c.name}>لجنة {c.name}</option>
                           ))}
                       </select>
@@ -150,7 +155,7 @@ const PrintCenter: React.FC<PrintCenterProps> = ({ data, onUpdateSchool }) => {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <ReportCard 
                           title="محضر استلام وتسليم (لجنة)"
-                          desc="نموذج تفصيلي للجنة محددة يحتوي على توزيع المواد والملاحظين"
+                          desc="نموذج تفصيلي يحتوي على المواد وتوقيع المراقبين آلياً"
                           icon={FileCheck}
                           onClick={() => {
                               if(!selectedCommittee) alert('الرجاء اختيار لجنة أولاً');
