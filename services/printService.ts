@@ -27,7 +27,7 @@ const createPrintPage = (title: string, content: string, settings: PrintSettings
         .center-title { text-align: center; flex-grow: 1; z-index: 10; }
         .center-title h1 { font-size: 24px; font-weight: 900; border: 2px solid rgba(255,255,255,0.3); padding: 10px 30px; border-radius: 50px; display: inline-block; background: rgba(0,0,0,0.1); }
         .content-wrapper { padding: 30px 40px; min-height: 23cm; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 12px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; }
         th { background-color: ${COLORS.tableHeader}; font-weight: 900; padding: 10px; border: 1px solid #000; text-align: center; }
         td { padding: 8px; border: 1px solid #000; text-align: center; font-weight: 500; }
         .footer-container { background: ${COLORS.footerGradient}; height: 40px; width: 100%; position: fixed; bottom: 0; left: 0; display: flex; justify-content: center; align-items: center; color: white; font-size: 10px; border-top-left-radius: 20px; }
@@ -35,6 +35,10 @@ const createPrintPage = (title: string, content: string, settings: PrintSettings
         .sig-block { text-align: center; width: 30%; }
         .sig-title { font-weight: bold; margin-bottom: 40px; font-size: 14px; }
         .sig-line { border-bottom: 1px dashed #000; width: 80%; margin: 0 auto; }
+        
+        /* إزالة الفواصل الإجبارية واستبدالها بمسافات */
+        .grade-section { margin-bottom: 30px; page-break-inside: avoid; }
+        
         @media print { .page-break { page-break-before: always; } }
       </style>
     </head>
@@ -60,6 +64,7 @@ const createPrintPage = (title: string, content: string, settings: PrintSettings
   `;
 };
 
+// --- كشف استلام الأوراق (عام) ---
 export const printCommitteeReceipt = (data: AppData, settings: PrintSettings, date: string) => {
   let content = `
     <table>
@@ -80,14 +85,16 @@ export const printCommitteeReceipt = (data: AppData, settings: PrintSettings, da
   const sortedCommittees = [...data.committees].sort((a, b) => parseInt(a.name) - parseInt(b.name));
   
   sortedCommittees.forEach((comm, index) => {
-      const totalStudents = Object.values(comm.counts).reduce((a, b) => a + b, 0);
+      // ✅ الآن هذا السطر سيعمل لأننا ملأنا counts في App.tsx
+      const totalStudents = Object.values(comm.counts || {}).reduce((a, b) => a + b, 0);
+      
       content += `
         <tr style="height: 50px;">
             <td>${index + 1}</td>
             <td style="font-size: 16px; font-weight: bold;">${comm.name}</td>
             <td>${comm.location}</td>
             <td></td> 
-            <td>${totalStudents}</td>
+            <td style="font-weight:900; font-size:14px;">${totalStudents}</td>
             <td></td> <td></td> 
         </tr>`;
   });
@@ -100,11 +107,9 @@ export const printCommitteeReceipt = (data: AppData, settings: PrintSettings, da
   }
 };
 
-// --- كشف فرز الغياب (المحدث) ---
+// --- كشف فرز الغياب (المدمج في ورقة واحدة) ---
 export const printAbsenceSorting = (data: AppData, settings: PrintSettings, date: string) => {
     let content = '';
-    
-    // محاولة الوصول للبيانات الخام
     const exams = (data as any).rawExams || [];
     
     const absentStudents = exams
@@ -123,29 +128,33 @@ export const printAbsenceSorting = (data: AppData, settings: PrintSettings, date
             groupedByGrade[s.grade].push(s);
         });
 
-        Object.keys(groupedByGrade).forEach((grade, idx) => {
-            if (idx > 0) content += `<div class="page-break"></div>`;
+        // ترتيب المراحل لضمان الظهور: أول، ثاني، ثالث
+        const sortedGrades = Object.keys(groupedByGrade).sort(); 
+
+        sortedGrades.forEach((grade, idx) => {
+            // ⛔ حذفنا <div class="page-break"></div>
+            // ✅ استبدلناه بـ div له هامش علوي فقط لفصل الجداول بصرياً
             
             content += `
-                <div style="background: #eee; padding: 10px; font-weight: bold; font-size: 16px; margin-bottom: 15px; border-radius: 5px;">
-                    المرحلة: ${grade}
-                </div>
-                <table>
-                    <thead>
-                        <tr>
-                            <th width="5%">م</th>
-                            <th width="15%">رقم الجلوس</th>
-                            <th width="30%">اسم الطالب</th>
-                            <th width="10%">رقم اللجنة</th>
-                            <th width="20%">المادة</th>
-                            <th width="20%">ملاحظات</th>
-                        </tr>
-                    </thead>
-                    <tbody>
+                <div class="grade-section" style="${idx > 0 ? 'margin-top: 40px;' : ''}">
+                    <div style="background: #eee; padding: 8px; font-weight: bold; font-size: 14px; border: 1px solid #000; border-bottom: none; width: fit-content; border-top-left-radius: 5px; border-top-right-radius: 5px;">
+                        المرحلة: ${grade}
+                    </div>
+                    <table style="margin-top:0;">
+                        <thead>
+                            <tr>
+                                <th width="5%">م</th>
+                                <th width="15%">رقم الجلوس</th>
+                                <th width="30%">اسم الطالب</th>
+                                <th width="10%">رقم اللجنة</th>
+                                <th width="20%">المادة</th>
+                                <th width="20%">ملاحظات</th>
+                            </tr>
+                        </thead>
+                        <tbody>
             `;
             
             groupedByGrade[grade].forEach((student: any, i: number) => {
-                // ✅ هنا يتم تنظيف اسم المادة من التكرار
                 const cleanSubject = [...new Set(student.examSubject.split('+').map((s: string) => s.trim()))].join(' + ');
                 
                 content += `
@@ -159,7 +168,7 @@ export const printAbsenceSorting = (data: AppData, settings: PrintSettings, date
                     </tr>
                 `;
             });
-            content += `</tbody></table>`;
+            content += `</tbody></table></div>`;
         });
     }
 
@@ -188,10 +197,12 @@ export const printCommitteeHandover = (data: AppData, settings: PrintSettings, c
             <tbody>
     `;
     data.stages.forEach(stage => {
+        // ✅ الآن هذا سيقرأ القيمة الصحيحة
         const count = committee.counts[stage.id] || 0;
-        if (count > 0) {
-            content += `<tr style="height: 60px;"><td style="font-weight: bold;">${stage.name}</td><td></td><td>${count}</td><td></td><td></td></tr>`;
-        }
+        
+        // عرض الصف حتى لو العدد 0 إذا أردت، أو إخفاؤه (الوضع الحالي يخفيه إذا 0)
+        // لضمان ظهور الجدول دائماً، يمكنك إزالة شرط if(count > 0)
+        content += `<tr style="height: 60px;"><td style="font-weight: bold;">${stage.name}</td><td></td><td>${count > 0 ? count : ''}</td><td></td><td></td></tr>`;
     });
     content += `</tbody></table>`;
     
