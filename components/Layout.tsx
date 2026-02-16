@@ -1,22 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { Role } from '../types';
-import { 
-  LayoutDashboard, 
-  FileText, 
-  Users, 
-  LogOut, 
-  School,
-  ClipboardList,
-  HeartHandshake,
-  QrCode,
-  X,
-  Grid,
-  GraduationCap,
-  Printer,
-  Bell,
-  UserCircle
-} from 'lucide-react';
+import { LayoutDashboard, FileText, Users, LogOut, School, ClipboardList, HeartHandshake, QrCode, X, Grid, GraduationCap, Printer, Bell, UserCircle } from 'lucide-react';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -24,7 +9,6 @@ interface LayoutProps {
   currentPage: string;
 }
 
-// ✅ التصحيح: يجب أن يبدأ اسم المكون بحرف كبير (PascalCase)
 const ItemIconForHeader = ({ id, items }: { id: string, items: any[] }) => {
     const item = items.find(i => i.id === id);
     if (!item) return <School size={20} className="text-blue-600" />;
@@ -33,7 +17,7 @@ const ItemIconForHeader = ({ id, items }: { id: string, items: any[] }) => {
 };
 
 export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentPage }) => {
-  const { userRole, setUserRole, currentUser, notifications } = useApp();
+  const { userRole, logout, currentUser, notifications } = useApp(); // ✅ استخدام logout
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
 
@@ -44,23 +28,15 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentPag
 
   const getMenuItems = () => {
     const items = [];
-    
-    // القوائم حسب الصلاحيات
-    if (userRole !== Role.TEACHER) {
-        items.push({ id: 'dashboard', label: 'الرئيسية', icon: LayoutDashboard });
-    }
-    if (userRole === Role.ADMIN || userRole === Role.MANAGER) {
-      items.push({ id: 'reports', label: 'التقارير', icon: FileText });
-    }
+    if (userRole !== Role.TEACHER) items.push({ id: 'dashboard', label: 'الرئيسية', icon: LayoutDashboard });
+    if (userRole === Role.ADMIN || userRole === Role.MANAGER) items.push({ id: 'reports', label: 'التقارير', icon: FileText });
     if (userRole === Role.ADMIN || userRole === Role.CONTROL) {
       items.push({ id: 'exams', label: 'الكنترول', icon: ClipboardList });
       items.push({ id: 'print', label: 'الطباعة', icon: Printer });
       items.push({ id: 'teachers', label: 'المعلمين', icon: Users });
       items.push({ id: 'students', label: 'الطلاب', icon: GraduationCap });
     }
-    if (userRole === Role.COUNSELOR || userRole === Role.ADMIN) {
-        items.push({ id: 'counselor_dashboard', label: 'المتابعة', icon: HeartHandshake });
-    }
+    if (userRole === Role.COUNSELOR || userRole === Role.ADMIN) items.push({ id: 'counselor_dashboard', label: 'المتابعة', icon: HeartHandshake });
     if (userRole === Role.TEACHER) {
         items.push({ id: 'scanner', label: 'مسح QR', icon: QrCode });
         items.push({ id: 'session', label: 'اللجنة', icon: FileText });
@@ -76,7 +52,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentPag
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col md:flex-row font-sans text-right" dir="rtl">
       
-      {/* 1. DESKTOP SIDEBAR */}
+      {/* DESKTOP SIDEBAR */}
       <aside className="hidden md:flex flex-col w-72 bg-slate-900 text-white min-h-screen fixed right-0 top-0 bottom-0 z-50 shadow-2xl transition-all duration-300 border-l border-slate-800">
         <div className="p-8 border-b border-slate-800/50 flex items-center gap-3">
           <div className="bg-gradient-to-br from-blue-600 to-blue-800 p-2.5 rounded-xl shadow-lg shadow-blue-900/20">
@@ -125,7 +101,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentPag
 
         <div className="p-6 border-t border-slate-800/50 bg-slate-900/50 backdrop-blur-sm">
           <button 
-            onClick={() => setUserRole(null)}
+            onClick={logout} // ✅ استخدام logout
             className="w-full flex items-center justify-center gap-2 text-red-400 bg-red-500/10 hover:bg-red-500 hover:text-white px-5 py-3 rounded-xl transition-all duration-200 font-bold group"
           >
             <LogOut size={18} className="group-hover:-translate-x-1 transition-transform" />
@@ -139,7 +115,6 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentPag
         <header className="md:hidden bg-white/90 backdrop-blur-xl px-5 py-4 shadow-sm flex justify-between items-center sticky top-0 z-40 border-b border-gray-100 transition-all">
             <div className="flex items-center gap-3">
                 <div className="bg-slate-50 p-2 rounded-full border border-slate-100">
-                    {/* ✅ استخدام المكون المصحح */}
                     <ItemIconForHeader id={currentPage} items={menuItems} />
                 </div>
                 <div>
@@ -230,7 +205,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentPag
                   </div>
                   <div className="border-t border-gray-100 pt-6 mt-auto">
                       <button 
-                        onClick={() => { setUserRole(null); setShowMobileMenu(false); }}
+                        onClick={() => { logout(); setShowMobileMenu(false); }} // ✅ استخدام logout
                         className="w-full flex items-center justify-center gap-3 text-red-600 bg-red-50 py-4 rounded-2xl font-bold hover:bg-red-100 transition-colors active:scale-95"
                       >
                           <LogOut size={20} />
