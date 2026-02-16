@@ -10,7 +10,6 @@ import { doc, getDoc, getDocs, collection } from 'firebase/firestore';
 import { db } from '../../firebase';
 
 export const ExamManagement: React.FC = () => {
-  // ✅ تأكدنا من استيراد deliverEnvelopeToControl هنا
   const { exams, students, importExams, clearAllExams, deliverEnvelopeToControl } = useApp();
   
   const [selectedCommittee, setSelectedCommittee] = useState<any | null>(null);
@@ -97,7 +96,11 @@ export const ExamManagement: React.FC = () => {
                           const subj = period.subjects[stageKey];
                           affectedStudents.push({ ...student, subject: subj.name });
                           if (!gradesInEnvelope.includes(student.grade)) gradesInEnvelope.push(student.grade);
-                          if (!subjectsInEnvelope.includes(subj.name)) subjectsInEnvelope.push(subj.name);
+                          
+                          // ✅ التعديل هنا: تنظيف اسم المادة من المسافات لمنع التكرار
+                          const subjectName = subj.name.trim(); 
+                          if (!subjectsInEnvelope.includes(subjectName)) subjectsInEnvelope.push(subjectName);
+                          
                           startTime = subj.startTime; endTime = subj.endTime;
                       }
                   });
@@ -185,13 +188,6 @@ export const ExamManagement: React.FC = () => {
 
       {/* Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-        {Object.keys(examsByCommittee).length === 0 && (
-            <div className="col-span-full py-24 text-center text-gray-400 bg-white rounded-3xl border-2 border-dashed border-gray-200 flex flex-col items-center justify-center gap-4">
-                <div className="bg-gray-50 p-6 rounded-full"><Package size={40} className="text-gray-300" /></div>
-                <div><p className="font-bold text-lg text-gray-600">لا توجد بيانات للعرض</p></div>
-            </div>
-        )}
-
         {Object.entries(examsByCommittee)
             .sort(([a], [b]) => a.localeCompare(b, 'en', {numeric: true}))
             .map(([committeeNum, committeeExams]) => {
@@ -246,7 +242,7 @@ export const ExamManagement: React.FC = () => {
                                     <div className="border-t border-gray-50 pt-2 mt-2 pl-2">
                                         {exam.status === EnvelopeStatus.COMPLETED && (
                                             <button 
-                                                // ✅ التعديل هنا: استخدام deliverEnvelopeToControl مباشرة برقم المظروف
+                                                // ✅ التعديل هنا: استخدام deliverEnvelopeToControl مباشرة برقم المظروف لحل مشكلة التداخل
                                                 onClick={() => {
                                                     if(window.confirm(`هل أنت متأكد من استلام مظروف ${exam.subject}؟`)) {
                                                         deliverEnvelopeToControl(exam.id);
@@ -275,7 +271,7 @@ export const ExamManagement: React.FC = () => {
         })}
       </div>
 
-      {/* QR Modal */}
+      {/* QR Modal, Wizard, Delete Modal (Same as previous) */}
       {selectedCommittee && (
         <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-white rounded-[2rem] p-8 text-center max-w-sm w-full relative shadow-2xl animate-scale-in">
@@ -288,8 +284,7 @@ export const ExamManagement: React.FC = () => {
           </div>
         </div>
       )}
-
-      {/* Wizard & Delete Modals (Same as before) */}
+      {/* ...Wizard & Delete Modals remain standard... */}
       {showWizard && (
           <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
               <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl animate-scale-in overflow-hidden">
@@ -313,7 +308,6 @@ export const ExamManagement: React.FC = () => {
               </div>
           </div>
       )}
-
        {showDeleteModal && (
           <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
               <div className="bg-white rounded-[2rem] p-8 max-w-sm w-full text-center shadow-2xl animate-scale-in">
