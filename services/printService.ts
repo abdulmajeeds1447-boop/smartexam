@@ -339,3 +339,43 @@ export const printCommitteeHandover = (data: AppData, settings: PrintSettings, c
         popup.document.close();
     }
 };
+
+// ✅ الدالة الجديدة: طباعة ملصق اللجنة (الرسمي الموحد في صفحة واحدة)
+export const printCommitteeSticker = (committeeNumber: string, location: string, qrDataUrl: string, settings: PrintSettings) => {
+    const content = `
+        <div style="
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+            justify-content: center; 
+            height: 18cm; /* ارتفاع مدروس لضمان عدم تجاوز الصفحة */
+            text-align: center;
+            border: 4px double #0e3f51;
+            margin: 20px auto;
+            border-radius: 20px;
+            padding: 20px;
+        ">
+            <h2 style="color: #666; font-size: 24px; margin-bottom: 10px; font-weight: bold;">لجنة رقم</h2>
+            <h1 style="font-size: 150px; margin: 0; line-height: 1; color: #0e3f51; font-weight: 900;">${committeeNumber}</h1>
+            
+            <div style="margin: 20px 0; background: #0e3f51; color: white; padding: 10px 40px; border-radius: 50px; display: inline-block;">
+                <h2 style="margin: 0; font-size: 28px;">📍 ${location}</h2>
+            </div>
+
+            <div style="margin: 20px auto; width: 300px;">
+                <img src="${qrDataUrl}" style="width: 100%; height: auto; display: block;" />
+            </div>
+
+            <p style="font-size: 18px; color: #555; font-weight: bold; margin-top: 15px;">
+                يرجى مسح الرمز أعلاه لتسجيل الحضور والاستلام
+            </p>
+        </div>
+    `;
+
+    const popup = window.open('', '_blank');
+    if (popup) {
+        // استخدام createPrintPage يضمن وجود الهوية الرسمية (الترويسة والفوتر)
+        popup.document.write(createPrintPage(`ملصق لجنة ${committeeNumber}`, content, settings));
+        popup.document.close();
+    }
+};
