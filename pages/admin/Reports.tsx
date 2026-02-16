@@ -8,7 +8,15 @@ type ReportTab = 'LOGISTICS' | 'ABSENCE' | 'NOTIFICATIONS';
 export const Reports: React.FC = () => {
   const { exams, notifications } = useApp();
   const [activeTab, setActiveTab] = useState<ReportTab>('LOGISTICS');
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  
+  // ✅ إصلاح التاريخ: استخدام التاريخ المحلي (YYYY-MM-DD) بدلاً من UTC
+  // هذا يضمن تطابق تاريخ "اليوم" مع التواريخ المسجلة في الاختبارات
+  const getLocalDate = () => {
+      const now = new Date();
+      return now.toLocaleDateString('en-CA'); // يعيد الصيغة 2026-02-16 حسب توقيت الجهاز
+  };
+  
+  const [selectedDate, setSelectedDate] = useState(getLocalDate());
 
   // 1. بيانات سجل العمليات (Chain of Custody)
   const logisticsData = exams
@@ -23,13 +31,15 @@ export const Reports: React.FC = () => {
         endTime: exam.endTime
     }));
 
-  // 2. بيانات الغياب
+  // 2. بيانات الغياب (مصححة)
   const absenceData = exams
-    .filter(e => e.date === selectedDate)
+    .filter(e => e.date === selectedDate) // تأكد أن تاريخ الاختبار يطابق التاريخ المختار
     .flatMap(exam => {
         return exam.students
             .filter(student => {
+                // البحث عن سجل الطالب في الحضور
                 const record = exam.attendance.find(a => a.studentId === student.id);
+                // ✅ التأكد من حالة الغياب
                 return record?.status === AttendanceStatus.ABSENT;
             })
             .map(student => ({
@@ -79,7 +89,7 @@ export const Reports: React.FC = () => {
               <ClipboardList size={20} /> سجل الاستلام والتسليم
           </button>
           <button onClick={() => setActiveTab('ABSENCE')} className={`px-6 py-4 rounded-2xl font-bold whitespace-nowrap transition-all flex items-center gap-3 ${activeTab === 'ABSENCE' ? 'bg-slate-900 text-white shadow-lg shadow-slate-300 scale-105' : 'bg-white text-gray-500 hover:bg-gray-50 border border-gray-100'}`}>
-              <AlertTriangle size={20} /> كشف الغياب
+              <AlertTriangle size={20} /> كشف الغياب <span className="bg-red-100 text-red-600 px-2 rounded-full text-xs">{absenceData.length}</span>
           </button>
           <button onClick={() => setActiveTab('NOTIFICATIONS')} className={`px-6 py-4 rounded-2xl font-bold whitespace-nowrap transition-all flex items-center gap-3 ${activeTab === 'NOTIFICATIONS' ? 'bg-slate-900 text-white shadow-lg shadow-slate-300 scale-105' : 'bg-white text-gray-500 hover:bg-gray-50 border border-gray-100'}`}>
               <Bell size={20} /> سجل العمليات
