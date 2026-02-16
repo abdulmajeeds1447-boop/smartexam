@@ -16,7 +16,7 @@ interface AppContextType {
   activeExamId: string | null;
   
   loginTeacher: (identifier: string) => Promise<{success: boolean, message?: string}>;
-  logout: () => void; // ✅ إضافة دالة الخروج الآمن
+  logout: () => void;
   
   processCommitteeScan: (committeeNumber: string, teacherId: string) => Promise<{success: boolean, message?: string}>;
   processAdminDeliveryScan: (committeeNumber: string) => Promise<{success: boolean, message?: string}>;
@@ -45,7 +45,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [activeExamId, setActiveExamId] = useState<string | null>(null);
 
-  // Sync Data
+  // --- المزامنة مع Firebase ---
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, 'teachers'), (snap) => setTeachers(snap.docs.map(d => ({ id: d.id, ...d.data() } as Teacher))));
     return () => unsubscribe();
@@ -65,11 +65,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   }, []);
 
   const sendNotification = async (title: string, message: string, type: 'info' | 'warning' | 'success' = 'info', relatedStudentId?: string) => {
-    addDoc(collection(db, 'notifications'), { title, message, type, timestamp: Date.now(), read: false, relatedStudentId: relatedStudentId || null });
+    try {
+      await addDoc(collection(db, 'notifications'), { title, message, type, timestamp: Date.now(), read: false, relatedStudentId: relatedStudentId || null });
+    } catch (e) { console.error("Notification Error", e); }
   };
 
-  // ✅ دالة الخروج (Fix: Ghost Session)
-  // تقوم بتنظيف كل المتغيرات لضمان عدم تداخل البيانات بين المستخدمين
   const logout = () => {
       setCurrentUser(null);
       setUserRole(null);
@@ -79,14 +79,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const loginTeacher = async (identifier: string): Promise<{success: boolean, message?: string}> => {
     try {
       const input = identifier.trim();
-      // البحث المحلي أولاً
       const localTeacher = teachers.find(t => t.id === input || t.phone === input);
       if (localTeacher) {
         setCurrentUser(localTeacher);
         setUserRole(Role.TEACHER);
         return { success: true };
       }
-      // البحث السحابي
       let teacherData: Teacher | null = null;
       if (input.startsWith('05')) {
           const q = query(collection(db, 'teachers'), where('phone', '==', input));
@@ -105,10 +103,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     } catch (e: any) { return { success: false, message: e.message }; }
   };
 
-  // --- Logic Functions ---
   const processCommitteeScan = async (committeeNumber: string, teacherId: string): Promise<{success: boolean, message?: string}> => {
     try {
-        // ✅ استخدام التوقيت المحلي لضمان الدقة
         const today = new Date().toLocaleDateString('en-CA'); 
         const now = new Date();
         const currentTime = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
@@ -121,11 +117,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
         if (availableExams.length === 0) return { success: false, message: `لا توجد اختبارات لهذه اللجنة` };
 
-        // محاولة مطابقة الوقت
         let targetExam = availableExams.find(e => e.date === today && currentTime >= e.startTime && currentTime <= e.endTime);
-        // إذا لم نجد، نطابق التاريخ فقط
         if (!targetExam) targetExam = availableExams.find(e => e.date === today);
-        // إذا لم نجد (حالة اختبار، أو تجربة)، نأخذ أول واحد متاح
         if (!targetExam) targetExam = availableExams[0];
 
         if (targetExam) {
@@ -147,31 +140,106 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const scanEnvelope = async (eid: string, tid: string) => { 
       await updateDoc(doc(db, 'exams', eid), { status: EnvelopeStatus.RECEIVED, teacherId: tid });
       setActiveExamId(eid);
+      sendNotification('بدء الاختبار', `تم فتح المظروف ${eid}`, 'info');
   };
+  
   const markAttendance = async (eid: string, sid: string, status: AttendanceStatus) => {
       const exam = exams.find(e => e.id === eid);
       if (!exam) return;
       const updated = exam.attendance.map(r => r.studentId === sid ? { ...r, status, timestamp: Date.now() } : r);
       await updateDoc(doc(db, 'exams', eid), { attendance: updated });
+      
+      if (status === AttendanceStatus.ABSENT) {
+          const s = exam.students.find(st => st.id === sid);
+          if (s) sendNotification('حالة غياب', `الطالب ${s.name} غائب`, 'warning', sid);
+      }
   };
+  
   const submitEnvelope = async (eid: string) => { 
       await updateDoc(doc(db, 'exams', eid), { status: EnvelopeStatus.COMPLETED });
       setActiveExamId(null);
+      sendNotification('انتهاء اللجنة', `تم إغلاق اللجنة ${eid}`, 'success');
   };
-  const deliverEnvelopeToControl = async (eid: string) => { await updateDoc(doc(db, 'exams', eid), { status: EnvelopeStatus.DELIVERED }); };
+  
+  const deliverEnvelopeToControl = async (eid: string) => { 
+      await updateDoc(doc(db, 'exams', eid), { status: EnvelopeStatus.DELIVERED });
+      sendNotification('تسليم نهائي', `تم تسليم المظروف ${eid} للكنترول`, 'success');
+  };
   
   const importTeachers = async (t: Teacher[]) => { const b = writeBatch(db); t.forEach(x => b.set(doc(db,'teachers',x.id), x)); await b.commit(); };
-  const importExams = async (e: ExamEnvelope[]) => { const b = writeBatch(db); e.forEach(x => b.set(doc(db,'exams',x.id), x)); await b.commit(); };
-  const importStudents = async (s: Student[]) => { const b = writeBatch(db); s.forEach(x => b.set(doc(db,'students',x.id), x)); await b.commit(); };
+  const importExams = async (e: ExamEnvelope[]) => { 
+      const chunkSize = 400;
+      for (let i = 0; i < e.length; i += chunkSize) {
+          const chunk = e.slice(i, i + chunkSize);
+          const b = writeBatch(db);
+          chunk.forEach(x => b.set(doc(db,'exams',x.id), x)); 
+          await b.commit(); 
+      }
+  };
+  const importStudents = async (s: Student[]) => { 
+      const chunkSize = 400;
+      for (let i = 0; i < s.length; i += chunkSize) {
+          const chunk = s.slice(i, i + chunkSize);
+          const b = writeBatch(db);
+          chunk.forEach(x => b.set(doc(db,'students',x.id), x)); 
+          await b.commit(); 
+      }
+  };
   const deleteStudent = async (id: string) => { await deleteDoc(doc(db, 'students', id)); };
-  const clearAllStudents = async () => { /* Logic hidden for brevity */ };
-  const clearAllTeachers = async () => { /* Logic hidden for brevity */ };
-  const clearAllExams = async () => { /* Logic hidden for brevity */ };
+
+  // ✅ الأكواد الكاملة للمسح الشامل (لم تعد مختصرة)
+  const clearAllStudents = async () => {
+    try {
+      const batchLimit = 400;
+      let batch = writeBatch(db);
+      let count = 0;
+      for (const student of students) {
+        const ref = doc(db, 'students', student.id);
+        batch.delete(ref);
+        count++;
+        if (count >= batchLimit) { await batch.commit(); batch = writeBatch(db); count = 0; }
+      }
+      if (count > 0) await batch.commit();
+      sendNotification('تنظيف', 'تم مسح سجلات الطلاب', 'warning');
+    } catch (e) { console.error(e); }
+  };
+
+  const clearAllTeachers = async () => {
+    try {
+      const batchLimit = 400;
+      let batch = writeBatch(db);
+      let count = 0;
+      for (const teacher of teachers) {
+        const ref = doc(db, 'teachers', teacher.id);
+        batch.delete(ref);
+        count++;
+        if (count >= batchLimit) { await batch.commit(); batch = writeBatch(db); count = 0; }
+      }
+      if (count > 0) await batch.commit();
+      sendNotification('تنظيف', 'تم مسح سجلات المعلمين', 'warning');
+    } catch (e) { console.error(e); }
+  };
+
+  const clearAllExams = async () => {
+    try {
+      const batchLimit = 400;
+      let batch = writeBatch(db);
+      let count = 0;
+      for (const exam of exams) {
+        const ref = doc(db, 'exams', exam.id);
+        batch.delete(ref);
+        count++;
+        if (count >= batchLimit) { await batch.commit(); batch = writeBatch(db); count = 0; }
+      }
+      if (count > 0) await batch.commit();
+      sendNotification('تنظيف', 'تم مسح سجلات الاختبارات', 'warning');
+    } catch (e) { console.error(e); }
+  };
 
   return (
     <AppContext.Provider value={{
       userRole, setUserRole, currentUser, exams, teachers, students, notifications, activeExamId,
-      loginTeacher, logout, // ✅
+      loginTeacher, logout,
       processCommitteeScan, processAdminDeliveryScan, scanEnvelope, markAttendance, submitEnvelope, deliverEnvelopeToControl,
       setActiveExamId, importTeachers, importExams, importStudents, deleteStudent, clearAllStudents, clearAllTeachers, clearAllExams
     }}>
