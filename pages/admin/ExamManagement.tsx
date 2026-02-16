@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { QRCodeCanvas } from 'qrcode.react';
 import { 
@@ -9,7 +9,7 @@ import { EnvelopeStatus, ExamEnvelope, Student, AttendanceStatus } from '../../t
 import { doc, getDoc, getDocs, collection } from 'firebase/firestore'; 
 import { db } from '../../firebase';
 import { Scanner } from '../teacher/Scanner';
-import { printCommitteeSticker } from '../../services/printService'; // ✅ استيراد الدالة الجديدة
+import { printCommitteeSticker } from '../../services/printService';
 
 export const ExamManagement: React.FC = () => {
   const { exams, students, teachers, importExams, clearAllExams, deliverEnvelopeToControl, processAdminDeliveryScan } = useApp();
@@ -26,7 +26,17 @@ export const ExamManagement: React.FC = () => {
   const [cloudSchedule, setCloudSchedule] = useState<any | null>(null);
   const [cloudCommitteesConfig, setCloudCommitteesConfig] = useState<Record<string, any>>({});
 
-  // 1. Data Engine
+  // ✅ [FIX] تجميد الشاشة الخلفية عند فتح أي نافذة لمنع الانزلاق على الجوال
+  useEffect(() => {
+    if (showReceiveScanner || selectedCommittee || showWizard || showDeleteModal) {
+        document.body.style.overflow = 'hidden'; // قفل الحركة
+    } else {
+        document.body.style.overflow = 'unset';  // استعادة الحركة
+    }
+    return () => { document.body.style.overflow = 'unset'; }
+  }, [showReceiveScanner, selectedCommittee, showWizard, showDeleteModal]);
+
+  // 1. محرك البيانات
   const examsByCommittee = useMemo(() => {
       const today = new Date().toISOString().split('T')[0];
       const filteredExams = exams.filter(e => {
@@ -47,7 +57,7 @@ export const ExamManagement: React.FC = () => {
       return groups;
   }, [exams, filterMode, searchTerm]);
 
-  // 2. Stats
+  // 2. الإحصائيات
   const stats = useMemo(() => {
       const todayExams = exams.filter(e => e.date === new Date().toISOString().split('T')[0]);
       return {
@@ -58,20 +68,19 @@ export const ExamManagement: React.FC = () => {
       };
   }, [exams]);
 
-  // 3. Helpers
+  // 3. المساعدات
   const getTeacherName = (idOrPhone: string) => {
       if (!idOrPhone) return '---';
       const t = teachers.find(teacher => teacher.id === idOrPhone || teacher.phone === idOrPhone);
       return t ? t.name : idOrPhone;
   };
 
-  // ✅ 4. دالة الطباعة الاحترافية للملصق (Sticker Printer)
+  // 4. طباعة الملصق
   const handlePrintSticker = () => {
       const canvas = document.getElementById('committee-qr') as HTMLCanvasElement;
       if (!canvas) return;
-      const imgUrl = canvas.toDataURL(); // تحويل الباركود لصورة
+      const imgUrl = canvas.toDataURL(); 
 
-      // إعدادات افتراضية للهوية (بما أننا في صفحة الكنترول قد لا نكون مررنا بصفحة الطباعة)
       const defaultSettings = {
           schoolName: 'ثانوية الأمير عبدالمجيد',
           adminName: 'الإدارة العامة للتعليم بمحافظة جدة',
@@ -81,11 +90,10 @@ export const ExamManagement: React.FC = () => {
           doorLabelTitle: '', attendanceTitle: '', stickerTitle: '', showBorder: true, colSequence: '', colSeatId: '', colName: '', colStage: '', colPresence: '', colSignature: '', showColSequence: true, showColSeatId: true, showColName: true, showColStage: true, showColPresence: true, showColSignature: true
       };
 
-      // استدعاء خدمة الطباعة الموحدة
       printCommitteeSticker(selectedCommittee.number, selectedCommittee.location, imgUrl, defaultSettings);
   };
 
-  // 5. Cloud Ops
+  // 5. العمليات السحابية
   const fetchCloudData = async () => {
       setIsFetching(true);
       try {
@@ -240,7 +248,6 @@ export const ExamManagement: React.FC = () => {
                                         <div>
                                             <h4 className="font-black text-gray-800 text-sm mb-1">{exam.subject}</h4>
                                             <div className="flex items-center gap-3 text-xs font-bold text-gray-500"><span className="flex items-center gap-1 bg-gray-100 px-2 py-0.5 rounded text-gray-600"><Clock size={12} /> {exam.startTime}</span><span className="text-gray-300">|</span><span>{exam.period}</span></div>
-                                            {/* ✅ عرض الاسم الصريح للمعلم */}
                                             {exam.teacherId && <div className="flex items-center gap-1.5 text-[10px] text-blue-700 mt-2 font-bold bg-blue-50 px-2 py-1 rounded-lg w-fit"><UserCheck size={12} />{getTeacherName(exam.teacherId)}</div>}
                                         </div>
                                         <div className="flex flex-col items-end gap-1">
@@ -248,7 +255,6 @@ export const ExamManagement: React.FC = () => {
                                         </div>
                                     </div>
                                     <div className="border-t border-gray-50 pt-2 mt-2 pl-2">
-                                        {/* زر الاستلام اليدوي (احتياطي) */}
                                         {exam.status === EnvelopeStatus.COMPLETED && (
                                             <button onClick={() => { if(window.confirm(`استلام مظروف ${exam.subject}؟`)) deliverEnvelopeToControl(exam.id); }} className="w-full bg-slate-900 text-white py-2.5 rounded-xl text-xs font-bold hover:bg-slate-800 flex items-center justify-center gap-2 shadow-lg transition-transform active:scale-[0.98]"><ArrowRightLeft size={14} className="text-green-400" /> استلام المظروف</button>
                                         )}
@@ -264,10 +270,10 @@ export const ExamManagement: React.FC = () => {
         })}
       </div>
 
-      {/* ✅ مودال الاستلام بالماسح */}
+      {/* ✅ مودال الاستلام بالماسح (Control Scanner Modal) */}
       {showReceiveScanner && (
-        <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
-            <div className="bg-white rounded-[2.5rem] w-full max-w-md overflow-hidden relative shadow-2xl">
+        <div className="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-4 backdrop-blur-md animate-fade-in">
+            <div className="bg-white rounded-[2.5rem] w-full max-w-md overflow-hidden relative shadow-2xl border border-white/20">
                 <button onClick={() => setShowReceiveScanner(false)} className="absolute top-4 left-4 z-20 bg-white/20 hover:bg-white/40 p-2 rounded-full text-white backdrop-blur-md transition"><X size={24}/></button>
                 <div className="h-[400px]">
                     <Scanner 
@@ -275,25 +281,26 @@ export const ExamManagement: React.FC = () => {
                         customProcessor={processAdminDeliveryScan}
                     />
                 </div>
-                <div className="bg-slate-900 text-white p-6 text-center"><h3 className="text-xl font-bold mb-1">وضع الاستلام</h3><p className="text-slate-400 text-sm">امسح كود المظروف لتأكيد استلامه</p></div>
+                <div className="bg-slate-900 text-white p-6 text-center">
+                    <h3 className="text-xl font-bold mb-1">وضع الاستلام</h3>
+                    <p className="text-slate-400 text-sm">امسح كود المظروف لتأكيد استلامه</p>
+                </div>
             </div>
         </div>
       )}
 
-      {/* ✅ مودال QR الخاص باللجنة (المحدث) */}
+      {/* ✅ مودال QR الخاص باللجنة */}
       {selectedCommittee && (
-        <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+        <div className="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-white rounded-[2rem] p-8 text-center max-w-sm w-full relative shadow-2xl animate-scale-in">
              <button onClick={() => setSelectedCommittee(null)} className="absolute top-4 left-4 p-2 bg-gray-100 rounded-full hover:bg-gray-200 transition"><X size={20}/></button>
              <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">رقم اللجنة</span>
              <h3 className="text-6xl font-black mb-4 text-slate-800">{selectedCommittee.number}</h3>
              <div className="bg-gray-50 px-4 py-2 rounded-xl text-gray-600 font-bold mb-6 inline-flex items-center gap-2"><MapPin size={16} className="text-red-500" />{selectedCommittee.location}</div>
              <div className="border-4 border-slate-900 p-4 rounded-3xl inline-block mb-8 bg-white shadow-xl">
-                {/* ✅ إضافة ID لاستخراج الصورة */}
                 <QRCodeCanvas id="committee-qr" value={JSON.stringify({ type: 'committee', id: selectedCommittee.number })} size={200} />
              </div>
              
-             {/* ✅ الزر الآن يستدعي الدالة الاحترافية للطباعة */}
              <button onClick={handlePrintSticker} className="w-full bg-slate-900 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-3 hover:bg-slate-800 transition-all shadow-xl">
                  <Printer size={20}/> طباعة الملصق التعريفي
              </button>
@@ -303,40 +310,26 @@ export const ExamManagement: React.FC = () => {
 
       {/* Wizard Modal */}
       {showWizard && (
-          <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="fixed inset-0 bg-black/80 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
               <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl animate-scale-in overflow-hidden">
                   <div className="bg-slate-900 p-8 text-white relative overflow-hidden">
                       <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full blur-2xl -translate-y-10 translate-x-10"></div>
                       <h3 className="font-bold text-2xl flex items-center gap-3 relative z-10"><Database className="text-green-400" /> مراجعة البيانات</h3>
-                      <p className="text-slate-400 text-sm mt-2 relative z-10">تأكيد استيراد الجدول وتوزيع الطلاب من النظام الأول</p>
                   </div>
                   <div className="p-8 space-y-6">
-                      <div className="space-y-4">
-                          <div className="flex justify-between items-center p-4 bg-gray-50 rounded-2xl border border-gray-100">
-                              <span className="text-gray-500 font-bold text-sm">أيام الاختبارات</span>
-                              <span className="text-xl font-black text-slate-800">{cloudSchedule?.days.length} أيام</span>
-                          </div>
-                          <div className="flex justify-between items-center p-4 bg-gray-50 rounded-2xl border border-gray-100">
-                              <span className="text-gray-500 font-bold text-sm">عدد اللجان</span>
-                              <span className="text-xl font-black text-slate-800">{Object.keys(cloudCommitteesConfig).length} لجنة</span>
-                          </div>
-                      </div>
                       <button onClick={handleGenerateFromCloud} className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold text-lg hover:bg-blue-700 shadow-xl shadow-blue-200 flex items-center justify-center gap-2 active:scale-95 transition-all">
-                          <Sparkles size={20} className="text-yellow-300" />
-                          تنفيذ التوزيع والاعتماد
+                          <Sparkles size={20} className="text-yellow-300" /> تنفيذ التوزيع
                       </button>
                   </div>
               </div>
           </div>
       )}
 
-      {/* Delete Modal */}
        {showDeleteModal && (
-          <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="fixed inset-0 bg-black/80 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
               <div className="bg-white rounded-[2rem] p-8 max-w-sm w-full text-center shadow-2xl animate-scale-in">
                   <div className="bg-red-50 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 text-red-500 border-4 border-red-100"><Trash2 size={36} /></div>
                   <h3 className="text-2xl font-black text-slate-800 mb-2">تصفير النظام؟</h3>
-                  <p className="text-gray-500 text-sm mb-8 leading-relaxed font-medium">سيتم حذف جميع المظاريف والجدول الحالي.<br/>هذا الإجراء لا يمكن التراجع عنه.</p>
                   <div className="flex gap-3">
                       <button onClick={() => setShowDeleteModal(false)} className="flex-1 bg-gray-100 py-3 rounded-2xl font-bold text-gray-600 hover:bg-gray-200 transition">إلغاء</button>
                       <button onClick={() => { clearAllExams(); setShowDeleteModal(false); }} className="flex-1 bg-red-600 text-white py-3 rounded-2xl font-bold hover:bg-red-700 shadow-xl shadow-red-200 transition">نعم، مسح</button>
